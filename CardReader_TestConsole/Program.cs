@@ -741,6 +741,7 @@ namespace CardReader_TestFileLogger
             private static int NextInstanceId;
             private readonly int InstanceId;
             private bool IsCardPresentationActive;
+            private bool IsCardAbsentReported;
             private string LastStateChangeKey;
             private string LastScanResultKey;
 
@@ -753,14 +754,12 @@ namespace CardReader_TestFileLogger
 
             public void HandleManualClear()
             {
-                TraceLog.Write("ManualClearGateResetStart", BuildGateSnapshot());
+                TraceLog.Write("ManualClearGatePreserveStart", BuildGateSnapshot());
                 lock (DisplayLock)
                 {
-                    // カード保持中のゲートは解除しない。手動クリア後の自動再表示を防ぐ。
-                    LastScanResultKey = null;
-                    LastStateChangeKey = null;
+                    // 手動クリアは表示だけを消し、カードあり/なしの表示済みゲートは維持する。
                 }
-                TraceLog.Write("ManualClearGateResetEnd", BuildGateSnapshot());
+                TraceLog.Write("ManualClearGatePreserveEnd", BuildGateSnapshot());
             }
 
             public void TestStateChange(object sender, ACRCardStateChangeEventArg e)
@@ -768,9 +767,10 @@ namespace CardReader_TestFileLogger
                 TraceLog.Write("StateChanged", "phase=enter " + BuildGateSnapshot() + " " + BuildEventDetails(e));
 
                 string gateSnapshot;
-                if (ShouldSuppressCardEvent(out gateSnapshot))
+                string skipReason;
+                if (ShouldSuppressStateChange(e, out gateSnapshot, out skipReason))
                 {
-                    TraceLog.Write("StateChanged", "SKIP reason=isCardPresentationActive " + gateSnapshot + " " + BuildEventDetails(e));
+                    TraceLog.Write("StateChanged", "SKIP reason=" + skipReason + " " + gateSnapshot + " " + BuildEventDetails(e));
                     return;
                 }
 
@@ -874,6 +874,13 @@ namespace CardReader_TestFileLogger
             {
                 TraceLog.Write("CardRemoved", "phase=enter " + BuildGateSnapshot() + " " + BuildEventDetails(e));
 
+                string gateSnapshot;
+                if (ShouldSuppressAlreadyReportedAbsent(e, out gateSnapshot))
+                {
+                    TraceLog.Write("CardRemoved", "SKIP reason=cardAlreadyAbsentReported " + gateSnapshot + " " + BuildEventDetails(e));
+                    return;
+                }
+
                 string readerStatusDetails;
                 if (IsReaderStillSeeingCard(out readerStatusDetails))
                 {
@@ -884,9 +891,10 @@ namespace CardReader_TestFileLogger
                 lock (DisplayLock)
                 {
                     IsCardPresentationActive = false;
+                    IsCardAbsentReported = true;
                     LastScanResultKey = null;
                     LastStateChangeKey = null;
-                    TraceLog.Write("CardRemovedGateReset", BuildGateSnapshotUnderLock() + " " + BuildEventDetails(e));
+                    TraceLog.Write("CardRemovedGateUpdate", BuildGateSnapshotUnderLock() + " " + BuildEventDetails(e));
                 }
 
                 Console.WriteLine("カードが取り外されました");
@@ -954,9 +962,43 @@ namespace CardReader_TestFileLogger
                     }
 
                     IsCardPresentationActive = true;
+                    IsCardAbsentReported = false;
+                    LastScanResultKey = null;
+                    LastStateChangeKey = null;
                     gateSnapshot = BuildGateSnapshotUnderLock();
                     skipReason = null;
                     return true;
+                }
+            }
+
+            private bool ShouldSuppressAlreadyReportedAbsent(ACRCardRemovedEventArg e, out string gateSnapshot)
+            {
+                lock (DisplayLock)
+                {
+                    gateSnapshot = BuildGateSnapshotUnderLock();
+                    return IsCardAbsentReported && IsCardAbsentLike(e == null ? null : e.ATR, e == null ? SmartCardStates.SCARD_STATE_UNAWARE : e.EventState);
+                }
+            }
+
+            private bool ShouldSuppressStateChange(ACRCardStateChangeEventArg e, out string gateSnapshot, out string skipReason)
+            {
+                lock (DisplayLock)
+                {
+                    gateSnapshot = BuildGateSnapshotUnderLock();
+                    if (IsCardPresentationActive)
+                    {
+                        skipReason = "isCardPresentationActive";
+                        return true;
+                    }
+
+                    if (IsCardAbsentReported && IsCardAbsentLike(e == null ? null : e.ATR, e == null ? SmartCardStates.SCARD_STATE_UNAWARE : e.EventState))
+                    {
+                        skipReason = "cardAlreadyAbsentReported";
+                        return true;
+                    }
+
+                    skipReason = null;
+                    return false;
                 }
             }
 
@@ -999,10 +1041,26 @@ namespace CardReader_TestFileLogger
                 return "managerTestId=" + InstanceId
                     + " managerHash=" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Manager)
                     + " isCardPresentationActive=" + IsCardPresentationActive
-                    + " isSuppressing=" + IsCardPresentationActive
+                    + " isCardAbsentReported=" + IsCardAbsentReported
+                    + " isSuppressing=" + (IsCardPresentationActive || IsCardAbsentReported)
                     + " lastStateChangeKey=" + TraceLog.FormatValue(LastStateChangeKey)
                     + " lastScanResultKey=" + TraceLog.FormatValue(LastScanResultKey)
                     + " managerCardPresent=" + (Manager != null && Manager.Card != null);
+            }
+
+            private static bool IsCardAbsentLike(byte[] atr, SmartCardStates eventState)
+            {
+                if (atr != null && atr.Length > 0)
+                    return false;
+
+                return HasState(eventState, SmartCardStates.SCARD_STATE_EMPTY)
+                    || !HasState(eventState, SmartCardStates.SCARD_STATE_PRESENT)
+                    || HasState(eventState, SmartCardStates.SCARD_STATE_MUTE);
+            }
+
+            private static bool HasState(SmartCardStates value, SmartCardStates flag)
+            {
+                return (value & flag) == flag;
             }
         }
 
