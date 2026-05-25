@@ -495,6 +495,7 @@ namespace CardReader_TestFileLogger
     {
         static void Main(string[] args)
         {
+            Console.OutputEncoding = Encoding.UTF8;
             byte[] AcceptedATR = new byte[] { 0x3B, 0x8F, 0x80, 0x01, 0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x68 };
             ACR122UManager Manager = new ACR122UManager(ACR122UManager.GetACR122UReaders().FirstOrDefault());
             //
@@ -556,15 +557,15 @@ namespace CardReader_TestFileLogger
 
         private static void WriteStartupStatus(ACR122U_PICCOperatingParametersControl controlOptions, ACR122U_MifareClassic_Status status)
         {
-            Console.WriteLine("PIC options:\n" + controlOptions);
-            Console.WriteLine("Starting Status:\n\tCard: " + status.Card + "\n\tError: " + status.ErrorCode);
+            Console.WriteLine("IC オプション:\n" + controlOptions);
+            Console.WriteLine("起動時の状態:\n\tカード検出: " + status.Card + "\n\tエラー: " + status.ErrorCode);
             WriteControlGuide();
         }
 
         private static void WriteControlGuide()
         {
             Console.WriteLine();
-            Console.WriteLine("操作: C: コンソールをクリア / その他のキー: 終了");
+            Console.WriteLine("操作: C キーでコンソールをクリア / その他のキーで終了");
         }
 
         static class FileLogger
@@ -601,18 +602,18 @@ namespace CardReader_TestFileLogger
 
             public void TestStateChange(object sender, ACRCardStateChangeEventArg e)
             {
-                Console.WriteLine("CardReaders state has changed");
-                Console.WriteLine("State Enum : {0}", e.EventState);
-                Console.WriteLine("State as Hex : {0:x}", (int)e.EventState);
-                Console.WriteLine("ATR : {0}", e.ATRString);
+                Console.WriteLine("カードリーダーの状態が変化しました");
+                Console.WriteLine("状態値: {0}", e.EventState);
+                Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
+                Console.WriteLine("ATR: {0}", e.ATRString);
             }
 
             public void TestAccept(object sender, ACRCardAcceptedCardScanEventArg e)
             {
-                Console.WriteLine("CardReader has accepted Card");
-                Console.WriteLine("State Enum : {0}", e.EventState);
-                Console.WriteLine("State as Hex : {0:x}", (int)e.EventState);
-                Console.WriteLine("ATR : {0}", e.ATRString);
+                Console.WriteLine("カードが受理されました");
+                Console.WriteLine("状態値: {0}", e.EventState);
+                Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
+                Console.WriteLine("ATR: {0}", e.ATRString);
 
 
                 if (Manager.Card == null)
@@ -629,26 +630,26 @@ namespace CardReader_TestFileLogger
 
             public void TestRejected(object sender, ACRCardRejectedCardScanEventArg e)
             {
-                Console.WriteLine("CardReader has rejected Card");
-                Console.WriteLine("State Enum : {0}", e.EventState);
-                Console.WriteLine("State as Hex : {0:x}", (int)e.EventState);
-                Console.WriteLine("ATR : {0}", e.ATRString);
+                Console.WriteLine("カードが拒否されました");
+                Console.WriteLine("状態値: {0}", e.EventState);
+                Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
+                Console.WriteLine("ATR: {0}", e.ATRString);
             }
 
             public void TestCardDetected(object sender, ACRCardDetectedEventArg e)
             {
-                Console.WriteLine("CardReader has detected Card");
-                Console.WriteLine("State Enum : {0}", e.EventState);
-                Console.WriteLine("State as Hex : {0:x}", (int)e.EventState);
-                Console.WriteLine("ATR : {0}", e.ATRString);
+                Console.WriteLine("カードを検出しました");
+                Console.WriteLine("状態値: {0}", e.EventState);
+                Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
+                Console.WriteLine("ATR: {0}", e.ATRString);
             }
 
             public void TestCardRemoved(object sender, ACRCardRemovedEventArg e)
             {
-                Console.WriteLine("CardReader has removed Card");
-                Console.WriteLine("State Enum : {0}", e.EventState);
-                Console.WriteLine("State as Hex : {0:x}", (int)e.EventState);
-                Console.WriteLine("ATR : {0}", e.ATRString);
+                Console.WriteLine("カードが取り外されました");
+                Console.WriteLine("状態値: {0}", e.EventState);
+                Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
+                Console.WriteLine("ATR: {0}", e.ATRString);
 
                 Manager.DisconnectToCard();
             }
