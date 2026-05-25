@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
@@ -146,7 +147,7 @@ namespace Acr122uCardInspector
 
                         if (singleRun)
                         {
-                            ProbeOnce(context, readerSession, result);
+                            ProbeOnce(context, readerSession, result, options.IdentityKey);
                             return result;
                         }
 
@@ -154,7 +155,7 @@ namespace Acr122uCardInspector
                         SummaryRenderer.Render(result);
                         Console.WriteLine();
                         Console.WriteLine("カード監視を開始します。終了するには Ctrl+C を押してください。");
-                        new CardStateMachine(context, readerSession, _trace).Watch();
+                        new CardStateMachine(context, readerSession, _trace, options.IdentityKey).Watch();
                         result.ExitCode = 0;
                         return result;
                     }
@@ -169,7 +170,7 @@ namespace Acr122uCardInspector
             }
         }
 
-        private void ProbeOnce(PcscContext context, ReaderSession readerSession, ProbeResult result)
+        private void ProbeOnce(PcscContext context, ReaderSession readerSession, ProbeResult result, string identityKey)
         {
             CardStateSnapshot snapshot = CardStateMachine.GetStableSnapshot(context, readerSession.ReaderName, _trace);
             result.State = snapshot.State.ToString();
@@ -185,7 +186,7 @@ namespace Acr122uCardInspector
             result.State = CardMonitorState.CardProcessing.ToString();
             using (CardSession cardSession = CardSession.Connect(readerSession.Context, readerSession.ReaderName, _trace))
             {
-                new CardProbe(_trace).Probe(cardSession, result);
+                new CardProbe(_trace, identityKey).Probe(cardSession, result);
             }
 
             result.State = CardMonitorState.CardDisplayed.ToString();
@@ -195,6 +196,8 @@ namespace Acr122uCardInspector
 
     internal sealed class CliOptions
     {
+        public const string DefaultIdentityKey = "0000";
+
         public bool ShowHelp { get; private set; }
         public bool ShowVersion { get; private set; }
         public bool Trace { get; private set; }
@@ -202,10 +205,11 @@ namespace Acr122uCardInspector
         public bool Once { get; private set; }
         public string JsonPath { get; private set; }
         public string ReaderName { get; private set; }
+        public string IdentityKey { get; private set; }
 
         public static CliParseResult Parse(string[] args)
         {
-            CliOptions options = new CliOptions();
+            CliOptions options = new CliOptions { IdentityKey = DefaultIdentityKey };
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -242,6 +246,15 @@ namespace Acr122uCardInspector
                     }
 
                     options.ReaderName = args[++i];
+                }
+                else if (arg == "--identity-key")
+                {
+                    if (i + 1 >= args.Length || IsOption(args[i + 1]))
+                    {
+                        return CliParseResult.Invalid("--identity-key には識別コード生成用キーを指定してください。");
+                    }
+
+                    options.IdentityKey = args[++i];
                 }
                 else
                 {
@@ -303,12 +316,14 @@ namespace Acr122uCardInspector
         private readonly PcscContext _context;
         private readonly ReaderSession _readerSession;
         private readonly TraceSink _trace;
+        private readonly string _identityKey;
 
-        public CardStateMachine(PcscContext context, ReaderSession readerSession, TraceSink trace)
+        public CardStateMachine(PcscContext context, ReaderSession readerSession, TraceSink trace, string identityKey)
         {
             _context = context;
             _readerSession = readerSession;
             _trace = trace;
+            _identityKey = identityKey;
         }
 
         public void Watch()
@@ -339,7 +354,7 @@ namespace Acr122uCardInspector
 
                         using (CardSession cardSession = CardSession.Connect(_context, _readerSession.ReaderName, _trace))
                         {
-                            new CardProbe(_trace).Probe(cardSession, cardResult);
+                            new CardProbe(_trace, _identityKey).Probe(cardSession, cardResult);
                         }
 
                         displayedCardKey = cardResult.Card == null ? DateTimeOffset.Now.ToString("O") : cardResult.Card.IdentityKey;
@@ -726,10 +741,12 @@ namespace Acr122uCardInspector
     internal sealed class CardProbe
     {
         private readonly TraceSink _trace;
+        private readonly string _identityKey;
 
-        public CardProbe(TraceSink trace)
+        public CardProbe(TraceSink trace, string identityKey)
         {
             _trace = trace;
+            _identityKey = identityKey;
         }
 
         public void Probe(CardSession session, ProbeResult result)
@@ -767,6 +784,12 @@ namespace Acr122uCardInspector
             result.Card.ClassificationReason = classification.Reason;
             result.Card.IdentityKey = session.ReaderName + "|" + result.Card.Atr + "|" + (result.Card.Uid ?? "") + "|" + result.Card.PcscProtocolRaw;
             result.ProbeItems.Add(ProbeItem.Success("Card.Classification", "カード分類", classification.EstimatedStandard + " / " + classification.EstimatedCardName));
+
+            IdentityCodeResult identity = IdentityCodeGenerator.Generate(result.Card, _identityKey);
+            result.Card.IdentityCode = identity.Code;
+            result.Card.IdentitySource = identity.Source;
+            result.ProbeItems.Add(ProbeItem.Success("Card.IdentityCode", "識別コード", result.Card.IdentityCode));
+            _trace.Event("CardIdentity", "識別コードを生成しました。");
 
             AddSafetyBoundaryItems(result);
             _trace.Event("CardProbe", "カード基本情報の取得を完了しました。");
@@ -904,6 +927,8 @@ namespace Acr122uCardInspector
         public string CardNameCode { get; set; }
         public string ClassificationReason { get; set; }
         public string IdentityKey { get; set; }
+        public string IdentityCode { get; set; }
+        public IdentitySourceInfo IdentitySource { get; set; }
         public ProbeItem UidStatus { get; set; }
         public ProbeItem AtsStatus { get; set; }
         public List<string> AtrParseWarnings { get; private set; }
@@ -911,6 +936,146 @@ namespace Acr122uCardInspector
         public CardInfo()
         {
             AtrParseWarnings = new List<string>();
+        }
+    }
+
+    internal sealed class IdentitySourceInfo
+    {
+        public string Uid { get; set; }
+        public string Atr { get; set; }
+        public string Ats { get; set; }
+        public string Pmm { get; set; }
+        public string Type { get; set; }
+        public bool KeyConfigured { get; set; }
+        public string Algorithm { get; set; }
+        public string HashFormat { get; set; }
+        public string NormalizedInputWithoutKey { get; set; }
+    }
+
+    internal sealed class IdentityCodeResult
+    {
+        public string Code { get; set; }
+        public IdentitySourceInfo Source { get; set; }
+    }
+
+    internal static class IdentityCodeGenerator
+    {
+        private const string Unknown = "unknown";
+
+        public static IdentityCodeResult Generate(CardInfo card, string identityKey)
+        {
+            IdentitySourceInfo source = new IdentitySourceInfo
+            {
+                Uid = NormalizeHexOrUnknown(card == null ? null : card.Uid),
+                Atr = NormalizeHexOrUnknown(card == null ? null : card.Atr),
+                Ats = NormalizeHexOrUnknown(card == null ? null : card.Ats),
+                Pmm = Unknown,
+                Type = NormalizeTextOrUnknown(BuildType(card)),
+                KeyConfigured = !string.IsNullOrEmpty(identityKey),
+                Algorithm = "MD5",
+                HashFormat = "lowercase-hex-32"
+            };
+            source.NormalizedInputWithoutKey = BuildNormalizedInput(source, null);
+
+            string normalizedInput = BuildNormalizedInput(source, identityKey ?? "");
+            return new IdentityCodeResult
+            {
+                Code = ComputeMd5LowerHex(normalizedInput),
+                Source = source
+            };
+        }
+
+        private static string BuildType(CardInfo card)
+        {
+            if (card == null)
+            {
+                return null;
+            }
+
+            string standard = NormalizeTextOrUnknown(card.EstimatedStandard);
+            string name = NormalizeTextOrUnknown(card.EstimatedCardName);
+            return standard + "/" + name;
+        }
+
+        private static string BuildNormalizedInput(IdentitySourceInfo source, string key)
+        {
+            StringBuilder builder = new StringBuilder();
+            builder.Append("UID=").Append(source.Uid);
+            builder.Append("|ATR=").Append(source.Atr);
+            builder.Append("|ATS=").Append(source.Ats);
+            builder.Append("|PMM=").Append(source.Pmm);
+            builder.Append("|TYPE=").Append(source.Type);
+            if (key != null)
+            {
+                builder.Append("|KEY=").Append(NormalizeTextOrUnknown(key));
+            }
+
+            return builder.ToString();
+        }
+
+        private static string ComputeMd5LowerHex(string value)
+        {
+            using (MD5 md5 = MD5.Create())
+            {
+                byte[] input = Encoding.UTF8.GetBytes(value);
+                byte[] hash = md5.ComputeHash(input);
+                return HexUtil.ToCompactLowerHex(hash);
+            }
+        }
+
+        private static string NormalizeHexOrUnknown(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return Unknown;
+            }
+
+            StringBuilder builder = new StringBuilder(value.Length);
+            foreach (char c in value)
+            {
+                if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
+                {
+                    builder.Append(char.ToUpperInvariant(c));
+                }
+            }
+
+            return builder.Length == 0 ? Unknown : builder.ToString();
+        }
+
+        private static string NormalizeTextOrUnknown(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return Unknown;
+            }
+
+            StringBuilder builder = new StringBuilder(value.Length);
+            bool previousWasSpace = false;
+            foreach (char c in value.Trim())
+            {
+                if (c == '|' || c == '=' || char.IsWhiteSpace(c))
+                {
+                    AppendSingleSpace(builder, ref previousWasSpace);
+                }
+                else
+                {
+                    builder.Append(c);
+                    previousWasSpace = false;
+                }
+            }
+
+            return builder.Length == 0 ? Unknown : builder.ToString();
+        }
+
+        private static void AppendSingleSpace(StringBuilder builder, ref bool previousWasSpace)
+        {
+            if (builder.Length == 0 || previousWasSpace)
+            {
+                return;
+            }
+
+            builder.Append(' ');
+            previousWasSpace = true;
         }
     }
 
@@ -1365,11 +1530,13 @@ namespace Acr122uCardInspector
             Console.WriteLine("  --version           バージョンを表示して終了します。");
             Console.WriteLine("  --once              1 回だけリーダー/カード状態を確認して終了します。");
             Console.WriteLine("  --reader <name>     使用する PC/SC リーダー名を指定します。部分一致も許可します。");
+            Console.WriteLine("  --identity-key <v>  識別コード生成用キーを指定します。既定値は暫定仕様の 0000 です。");
             Console.WriteLine("  --trace             logs/trace-*.log に診断トレースを出力します。");
             Console.WriteLine("  --json [path]       ProbeResult を JSON 出力します。path 省略時は標準出力へ出します。");
             Console.WriteLine();
             Console.WriteLine("安全方針:");
             Console.WriteLine("  既定では reader 設定変更、書き込み APDU、鍵探索、残高/履歴/個人情報の読み取りを行いません。");
+            Console.WriteLine("  識別コードは簡易識別用です。強い認証や改ざん耐性は保証しません。");
         }
 
         public static void Render(ProbeResult result)
@@ -1417,6 +1584,7 @@ namespace Acr122uCardInspector
                 Console.WriteLine("  ATR Length: " + result.Card.AtrLength);
                 Console.WriteLine("  UID/NFC ID: " + ValueOrUnavailable(result.Card.Uid));
                 Console.WriteLine("  ATS: " + ValueOrUnavailable(result.Card.Ats));
+                Console.WriteLine("  識別コード: " + ValueOrUnavailable(result.Card.IdentityCode));
                 Console.WriteLine("  Estimated Standard: " + ValueOrUnavailable(result.Card.EstimatedStandard));
                 Console.WriteLine("  Estimated Card: " + ValueOrUnavailable(result.Card.EstimatedCardName));
                 Console.WriteLine("  Card Name Code: " + ValueOrUnavailable(result.Card.CardNameCode));
@@ -1613,7 +1781,31 @@ namespace Acr122uCardInspector
             json.Property("estimatedCardName", card.EstimatedCardName);
             json.Property("cardNameCode", card.CardNameCode);
             json.Property("classificationReason", card.ClassificationReason);
+            json.Property("identityCode", card.IdentityCode);
+            WriteIdentitySource(json, card.IdentitySource);
             json.PropertyArray("atrParseWarnings", card.AtrParseWarnings);
+            json.EndObject();
+        }
+
+        private static void WriteIdentitySource(JsonBuilder json, IdentitySourceInfo source)
+        {
+            json.PropertyName("identitySource");
+            if (source == null)
+            {
+                json.NullValue();
+                return;
+            }
+
+            json.BeginObject();
+            json.Property("uid", source.Uid);
+            json.Property("atr", source.Atr);
+            json.Property("ats", source.Ats);
+            json.Property("pmm", source.Pmm);
+            json.Property("type", source.Type);
+            json.Property("keyConfigured", source.KeyConfigured);
+            json.Property("algorithm", source.Algorithm);
+            json.Property("hashFormat", source.HashFormat);
+            json.Property("normalizedInputWithoutKey", source.NormalizedInputWithoutKey);
             json.EndObject();
         }
 
@@ -1961,6 +2153,22 @@ namespace Acr122uCardInspector
                 }
                 builder.Append(bytes[i].ToString("X2"));
             }
+            return builder.ToString();
+        }
+
+        public static string ToCompactLowerHex(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length == 0)
+            {
+                return "";
+            }
+
+            StringBuilder builder = new StringBuilder(bytes.Length * 2);
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                builder.Append(bytes[i].ToString("x2"));
+            }
+
             return builder.ToString();
         }
 
