@@ -1,0 +1,43 @@
+# Visual Studio / .NET
+.vs/
+[Bb]in/
+[Oo]bj/
+
+# User-specific IDE files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build outputs and intermediates
+*.exe
+*.dll
+*.pdb
+*.cache
+*.log
+*.FileListAbsolute.txt
+*.CopyComplete
+*.resources
+*.tmp
+*.TMP
+
+# NuGet restore outputs
+project.assets.json
+project.nuget.cache
+*.nuget.dgspec.json
+*.nuget.g.props
+*.nuget.g.targets
+
+# Signing secrets and local certificates
+*.pfx
+*.p12
+*.key
+*.snk
+*.pem
+*.pvk
+*.cer
+*.crt
+
+# Local environment
+.env
+.env.*

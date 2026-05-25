@@ -11,6 +11,7 @@
     <TargetFrameworkVersion>v4.6.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <Deterministic>true</Deterministic>
     <TargetFrameworkProfile />
   </PropertyGroup>
@@ -49,6 +50,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+    <None Include="app.manifest" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\NFC_CardReader\NFC_CardReader.csproj">

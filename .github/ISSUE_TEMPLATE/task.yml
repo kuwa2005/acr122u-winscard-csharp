@@ -1,0 +1,33 @@
+name: 作業タスク
+description: 改修・調査・ドキュメント整備などの作業依頼
+title: "[Task] "
+labels:
+  - task
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 何を達成したいかを簡潔に書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: 詳細
+      description: 背景、対象ファイル、期待する変更内容を書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: 完了条件
+      value: |
+        - [ ] ビルドが成功する
+        - [ ] 生成物や秘密情報が Git に含まれていない
+        - [ ] README / docs が必要に応じて更新されている
+  - type: textarea
+    id: notes
+    attributes:
+      label: 補足
+      description: 関連 URL、ログ、スクリーンショットなどがあれば追記してください。
