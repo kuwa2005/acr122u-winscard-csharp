@@ -538,17 +538,18 @@ namespace CardReader_TestFileLogger
             Manager.CardDetected += Test.TestCardDetected;
             Manager.CardRemoved += Test.TestCardRemoved;
             List<string> Names = WinSmartCardContext.ListReadersAsStringsStatic();
-            WaitForExitOrClear(readerName, firmwareVersion, ControlOptions, Status);
+            WaitForExitOrClear(readerName, firmwareVersion, ControlOptions, Status, Test);
 
         }
 
-        private static void WaitForExitOrClear(string readerName, string firmwareVersion, ACR122U_PICCOperatingParametersControl controlOptions, ACR122U_MifareClassic_Status status)
+        private static void WaitForExitOrClear(string readerName, string firmwareVersion, ACR122U_PICCOperatingParametersControl controlOptions, ACR122U_MifareClassic_Status status, ManagerTest test)
         {
             while (true)
             {
                 ConsoleKeyInfo keyInfo = Console.ReadKey(true);
                 if (keyInfo.Key == ConsoleKey.C)
                 {
+                    test.ResetCardDisplayAfterManualClear();
                     Console.Clear();
                     WriteStartupStatus(readerName, firmwareVersion, controlOptions, status);
                     continue;
@@ -660,14 +661,38 @@ namespace CardReader_TestFileLogger
         {
 
             ACR122UManager Manager;
+            private readonly object DisplayLock = new object();
+            private string DisplayedCardKey;
+            private string DisplayedCardEventKey;
+            private string LastStateChangeKey;
+            private string LastScanResultKey;
 
             public ManagerTest(ACR122UManager M)
             {
                 Manager = M;
             }
 
+            public void ResetCardDisplayAfterManualClear()
+            {
+                lock (DisplayLock)
+                {
+                    DisplayedCardKey = null;
+                    DisplayedCardEventKey = null;
+                    LastScanResultKey = null;
+                }
+            }
+
             public void TestStateChange(object sender, ACRCardStateChangeEventArg e)
             {
+                string stateChangeKey = CardEventIdentity.BuildStateChangeKey(e);
+                lock (DisplayLock)
+                {
+                    if (string.Equals(LastStateChangeKey, stateChangeKey, StringComparison.Ordinal))
+                        return;
+
+                    LastStateChangeKey = stateChangeKey;
+                }
+
                 Console.WriteLine("カードリーダーの状態が変化しました");
                 Console.WriteLine("状態値: {0}", e.EventState);
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
@@ -677,6 +702,9 @@ namespace CardReader_TestFileLogger
 
             public void TestAccept(object sender, ACRCardAcceptedCardScanEventArg e)
             {
+                if (!ShouldWriteScanResult("ACCEPTED", e.ATR, e.EventState))
+                    return;
+
                 Console.WriteLine("カードが受理されました");
                 Console.WriteLine("状態値: {0}", e.EventState);
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
@@ -685,6 +713,9 @@ namespace CardReader_TestFileLogger
 
             public void TestRejected(object sender, ACRCardRejectedCardScanEventArg e)
             {
+                if (!ShouldWriteScanResult("REJECTED", e.ATR, e.EventState))
+                    return;
+
                 Console.WriteLine("カードが拒否されました");
                 Console.WriteLine("状態値: {0}", e.EventState);
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
@@ -693,16 +724,44 @@ namespace CardReader_TestFileLogger
 
             public void TestCardDetected(object sender, ACRCardDetectedEventArg e)
             {
-                Console.Clear();
-                Console.WriteLine("カードを検出しました");
-                Console.WriteLine("状態値: {0}", e.EventState);
-                Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
-                Console.WriteLine("ATR: {0}", e.ATRString);
-                CardSummaryWriter.Write(Manager, e.ATR);
+                string eventKey = CardEventIdentity.BuildDetectedCardEventKey(e.ATR, e.EventState);
+                lock (DisplayLock)
+                {
+                    if (string.Equals(DisplayedCardEventKey, eventKey, StringComparison.Ordinal))
+                        return;
+                }
+
+                string cardKey = CardEventIdentity.BuildDetectedCardKey(Manager, e.ATR, e.EventState);
+                lock (DisplayLock)
+                {
+                    if (string.Equals(DisplayedCardEventKey, eventKey, StringComparison.Ordinal) ||
+                        string.Equals(DisplayedCardKey, cardKey, StringComparison.Ordinal))
+                    {
+                        DisplayedCardEventKey = eventKey;
+                        return;
+                    }
+
+                    DisplayedCardEventKey = eventKey;
+                    DisplayedCardKey = cardKey;
+
+                    Console.Clear();
+                    Console.WriteLine("カードを検出しました");
+                    Console.WriteLine("状態値: {0}", e.EventState);
+                    Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
+                    Console.WriteLine("ATR: {0}", e.ATRString);
+                    CardSummaryWriter.Write(Manager, e.ATR);
+                }
             }
 
             public void TestCardRemoved(object sender, ACRCardRemovedEventArg e)
             {
+                lock (DisplayLock)
+                {
+                    DisplayedCardKey = null;
+                    DisplayedCardEventKey = null;
+                    LastScanResultKey = null;
+                }
+
                 Console.WriteLine("カードが取り外されました");
                 Console.WriteLine("状態値: {0}", e.EventState);
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
@@ -710,14 +769,102 @@ namespace CardReader_TestFileLogger
 
                 Manager.DisconnectToCard();
             }
+
+            private bool ShouldWriteScanResult(string result, byte[] atr, SmartCardStates eventState)
+            {
+                string scanResultKey = result + ":" + CardEventIdentity.BuildDetectedCardEventKey(atr, eventState);
+                lock (DisplayLock)
+                {
+                    if (string.Equals(LastScanResultKey, scanResultKey, StringComparison.Ordinal))
+                        return false;
+
+                    LastScanResultKey = scanResultKey;
+                    return true;
+                }
+            }
         }
 
+    }
+
+    internal static class CardEventIdentity
+    {
+        public static string BuildDetectedCardKey(ACR122UManager manager, byte[] atr, SmartCardStates eventState)
+        {
+            string uid;
+            if (CardSummaryWriter.TryReadUid(manager, out uid))
+                return "UID:" + uid;
+
+            return BuildDetectedCardEventKey(atr, eventState);
+        }
+
+        public static string BuildDetectedCardEventKey(byte[] atr, SmartCardStates eventState)
+        {
+            string atrKey = FormatBytes(atr);
+            if (!string.IsNullOrEmpty(atrKey))
+                return "ATR:" + atrKey;
+
+            return "STATE:" + ((int)eventState).ToString("X");
+        }
+
+        public static string BuildStateChangeKey(ACRCardStateChangeEventArg e)
+        {
+            if (e == null)
+                return "STATE:null";
+
+            return "STATE:" + ((int)e.EventState).ToString("X") + "|ATR:" + FormatBytes(e.ATR);
+        }
+
+        private static string FormatBytes(IEnumerable<byte> bytes)
+        {
+            if (bytes == null)
+                return null;
+
+            byte[] byteArray = bytes.ToArray();
+            if (byteArray.Length == 0)
+                return null;
+
+            return BitConverter.ToString(byteArray);
+        }
     }
 
     internal static class CardSummaryWriter
     {
         private static readonly byte[] GetUidCommand = new byte[] { 0xFF, 0xCA, 0x00, 0x00, 0x00 };
         private static readonly byte[] GetAtsCommand = new byte[] { 0xFF, 0xCA, 0x01, 0x00, 0x00 };
+
+        public static bool TryReadUid(ACR122UManager manager, out string uid)
+        {
+            uid = null;
+            WinSmartCard card = null;
+            bool shouldDispose = false;
+
+            try
+            {
+                card = manager.Card ?? manager.Context.Card;
+                if (card == null)
+                {
+                    card = manager.Context.CardConnect(SmartCardShareTypes.SCARD_SHARE_SHARED);
+                    shouldDispose = true;
+                }
+
+                ApduReadResult result = ReadPublicData(card, GetUidCommand, "UID");
+                if (!result.Succeeded)
+                    return false;
+
+                uid = result.Message;
+                return !string.IsNullOrWhiteSpace(uid);
+            }
+            catch
+            {
+                uid = null;
+                return false;
+            }
+            finally
+            {
+                if (shouldDispose && card != null)
+                    card.Dispose();
+            }
+        }
 
         public static void Write(ACR122UManager manager, byte[] atr)
         {
@@ -950,21 +1097,23 @@ namespace CardReader_TestFileLogger
 
         private sealed class ApduReadResult
         {
-            private ApduReadResult(string message)
+            private ApduReadResult(bool succeeded, string message)
             {
+                Succeeded = succeeded;
                 Message = message;
             }
 
+            public bool Succeeded { get; private set; }
             public string Message { get; private set; }
 
             public static ApduReadResult Success(string data)
             {
-                return new ApduReadResult(data);
+                return new ApduReadResult(true, data);
             }
 
             public static ApduReadResult Failed(string reason)
             {
-                return new ApduReadResult(reason);
+                return new ApduReadResult(false, reason);
             }
         }
 
