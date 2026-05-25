@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NFC_CardReader", "NFC_CardR
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CardReader_TestConsole", "CardReader_TestConsole\CardReader_TestConsole.csproj", "{33D720CE-2911-4A4D-84E1-9973826000F9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Acr122uCardInspector", "Acr122uCardInspector\Acr122uCardInspector.csproj", "{7E4E80FD-2C49-4A62-A0F6-DA0CC577C6D8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{33D720CE-2911-4A4D-84E1-9973826000F9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{33D720CE-2911-4A4D-84E1-9973826000F9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{33D720CE-2911-4A4D-84E1-9973826000F9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7E4E80FD-2C49-4A62-A0F6-DA0CC577C6D8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7E4E80FD-2C49-4A62-A0F6-DA0CC577C6D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7E4E80FD-2C49-4A62-A0F6-DA0CC577C6D8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7E4E80FD-2C49-4A62-A0F6-DA0CC577C6D8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
