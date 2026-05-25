@@ -1,12 +1,14 @@
 # リリースとコード署名
 
-Windows 向けに `CardReader_TestConsole.exe` を配布する場合は、SmartScreen の警告を減らすために正規の Authenticode コード署名と一貫した配布元を使います。SmartScreen の評価は Microsoft 側の reputation に依存するため、署名した直後の新しい証明書や新しい実行ファイルでは警告がすぐに消えない場合があります。
+Windows 向けに `CardReader_TestConsole.exe` を配布する場合は、SmartScreen の警告を減らすために正規の Authenticode コード署名と一貫した配布元を使います。将来、新規カード情報表示プログラム `Acr122uCardInspector.exe` を追加して配布する場合も同じ方針を適用します。SmartScreen の評価は Microsoft 側の reputation に依存するため、署名した直後の新しい証明書や新しい実行ファイルでは警告がすぐに消えない場合があります。
 
-Release ビルド時の署名対象は次の実行ファイルです。
+現行 Release ビルド時の署名対象は次の実行ファイルです。
 
 ```text
 CardReader_TestConsole\bin\Release\CardReader_TestConsole.exe
 ```
+
+`Acr122uCardInspector` を新規プロジェクトとして実装した後は、その Release 出力 exe も署名対象に追加します。未実装の exe 名をリリース済み成果物として案内しないでください。
 
 ## 推奨方針
 
@@ -47,10 +49,11 @@ $env:SIGN_TIMESTAMP_URL = "http://timestamp.digicert.com"
 2. `CardReader_TestConsole/app.manifest` の `requestedExecutionLevel` が `asInvoker` のままであることを確認する。管理者権限が不要なアプリでは昇格要求を追加しない。
 3. `dotnet build .\NFC_CardReader.sln --configuration Release` で Release 構成のビルドが成功することを確認する。
 4. `CardReader_TestConsole\bin\Release\CardReader_TestConsole.exe` を実機で通常起動し、起動時リーダー概要とカード検出時のカードサマリーが表示されることを確認する。
-5. 必要に応じて `--trace` または `ACR122U_TRACE=1` でトレースログを確認する。`logs/` と `*.log` は Git 管理対象外のままにする。
-6. 生成された exe を Authenticode 署名し、タイムスタンプが付いていることを確認する。
-7. 署名後の成果物を GitHub Releases など一貫した配布元へアップロードする。
-8. リリースノートにバージョン、対象 OS、必要な ACR122U ドライバ、既知の注意点、チェックサムを記載する。
+5. 新規カード情報表示プログラムを配布する場合は、Phase 1 検証と品質チェックが完了し、`--help`、`--version`、`--trace`、`--json <path>` など実装済みオプションの結果が README と一致していることを確認する。2026-05-25 の品質チェックでは要修正判定のため、現時点では新規アプリを配布対象にしない。
+6. 必要に応じて `--trace` または `ACR122U_TRACE=1` でトレースログを確認する。`logs/` と `*.log` は Git 管理対象外のままにする。
+7. 生成された exe を Authenticode 署名し、タイムスタンプが付いていることを確認する。
+8. 署名後の成果物を GitHub Releases など一貫した配布元へアップロードする。
+9. リリースノートにバージョン、対象 OS、必要な ACR122U ドライバ、既知の注意点、チェックサムを記載する。
 
 ## 注意
 

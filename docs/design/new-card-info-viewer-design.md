@@ -383,6 +383,35 @@ Direct Transmit のエラーコードは、`00` No Error、`01` Time Out、`02` 
 
 ## 13. 段階的実装計画
 
+### 現時点の実装状況（2026-05-25）
+
+[Phase 1 検証レポート](../testing/new-card-info-viewer-phase1-test-report.md) では Phase 1 は未完了、[品質チェックレポート](../testing/new-card-info-viewer-quality-report.md) では要修正、[コードレビュー](../reviews/new-card-info-viewer-code-review.md) では差し戻し判定になっている。
+
+実装済みまたは部分実装済み:
+
+- 既存 `CardReader_TestConsole` で、ACR122U リーダー概要、firmware、資料ベースの既知仕様を表示する。
+- カード検出時に ATR、UID、ATS、推定カード、推定規格、Historical bytes、PC/SC protocol、ACR122U 状態を表示する処理がある。
+- `--trace` または `ACR122U_TRACE=1` による `logs/trace-YYYYMMDD-HHMMSS.log` 出力がある。
+- 同一カード保持中の重複表示抑制、疑似 removed 再確認、手動 `C` クリア時の表示ゲート維持が実装されている。
+
+未実装または未完了:
+
+- 新規 console project `Acr122uCardInspector`。
+- `PcscContext`、`ReaderCatalog`、`ReaderSession`、`CardSession`、`ApduTransceiver` への責務分離。
+- reader 一覧表示、明示選択、未接続時の分かりやすいエラー。
+- PICC operating parameter の bit 展開表示と、通常起動で reader 設定を変更しない read-only default。
+- 設計上の明示状態機械 `CardCandidate` / `CardPresentStable` / `RemovalCandidate` など。
+- `--help`、`--version`、`--trace`、`--json <path>`、`--markdown <path>`、不正オプションエラーの正式 CLI オプション。
+- JSON / Markdown 出力モデル、`SkippedByPolicy` / `NotApplicable` などの未取得理由モデル。
+- 非対話実行や CI で未処理例外を起こさない終了制御。
+- 実カードを置いた状態での ATR / UID / ATS、カード分類、実 removed、疑似 removed の実機完了確認。
+
+次 Phase の入口条件:
+
+- Phase 1 の差し戻し項目を実装し、Release ビルド、CLI オプション、実カード確認、正常終了コードを再検証する。
+- 品質チェックとコードレビューの要修正項目を解消し、再チェック結果を設計・README・機能仕様へリンクする。
+- 最終ドキュメント整備は、テスト/品質チェックが完了してから実施する。
+
 ### Phase 1: リーダー検出 / ファーム取得 / ATR UID ATS 表示
 
 - 新規 console project `Acr122uCardInspector` を追加する。
