@@ -9,6 +9,7 @@ using NFC_CardReader.ACR122U;
 using NFC_CardReader.ACR122U.CardTypes.MifareClassic;
 using NFC_CardReader.ACR122UManager;
 using System.IO;
+using System.Globalization;
 using NFC_CardReader.WinSCard;
 
 #region BaseTesting
@@ -496,22 +497,31 @@ namespace CardReader_TestFileLogger
         static void Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
+            TraceLog.Initialize(args);
+            TraceLog.Write("Startup", "traceEnabled=" + TraceLog.IsEnabled + " currentDirectory=" + TraceLog.FormatValue(Environment.CurrentDirectory));
             byte[] AcceptedATR = new byte[] { 0x3B, 0x8F, 0x80, 0x01, 0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x68 };
+            TraceLog.Write("AcceptedAtrConfigured", TraceLog.FormatAtr(AcceptedATR));
             string readerName = ACR122UManager.GetACR122UReaders().FirstOrDefault();
+            TraceLog.Write("ReaderSelected", "readerName=" + TraceLog.FormatValue(readerName));
             ACR122UManager Manager = new ACR122UManager(readerName);
+            TraceLog.Write("ManagerCreated", "managerHash=" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Manager));
             //
             ACR122U_MifareClassic_Status Status;
             Manager.GetStatus(out Status);
+            TraceLog.Write("StartupStatusRead", FormatStartupStatus(Status));
             //
             ACR122U_PICCOperatingParametersControl ControlOptions = ACR122U_PICCOperatingParametersControl.AllOn;
             Manager.SetPICCOperatingParameterState(ref ControlOptions);
+            TraceLog.Write("PICCOptionsSet", "controlOptions=" + ControlOptions + " controlOptionsHex=0x" + ((int)ControlOptions).ToString("X"));
             string firmwareVersion;
             TryGetFirmwareVersion(Manager.Context, out firmwareVersion);
+            TraceLog.Write("FirmwareReadEnd", "firmwareVersion=" + TraceLog.FormatValue(firmwareVersion));
             //
             WriteStartupStatus(readerName, firmwareVersion, ControlOptions, Status);
             //
             ACR122UManager.GlobalCardCheck = (e) =>
             {
+                TraceLog.Write("GlobalCardCheckStart", BuildEventDetails(e));
                 bool CeckSuccess = false;
                 if (e.ATR.Length == AcceptedATR.Length)
                 {
@@ -525,10 +535,12 @@ namespace CardReader_TestFileLogger
                         }
                     }
                 }
+                TraceLog.Write("GlobalCardCheckEnd", "result=" + CeckSuccess + " " + BuildEventDetails(e));
                 return CeckSuccess;
             };
 
             Manager.CheckCard = true;
+            TraceLog.Write("CheckCardEnabled", "checkCard=" + Manager.CheckCard);
 
             ManagerTest Test = new ManagerTest(Manager);
 
@@ -538,29 +550,42 @@ namespace CardReader_TestFileLogger
             Manager.CardDetected += Test.TestCardDetected;
             Manager.CardRemoved += Test.TestCardRemoved;
             List<string> Names = WinSmartCardContext.ListReadersAsStringsStatic();
+            TraceLog.Write("ReadersListed", "count=" + Names.Count + " readers=" + TraceLog.FormatValue(string.Join("|", Names.ToArray())));
             WaitForExitOrClear(readerName, firmwareVersion, ControlOptions, Status, Test);
 
         }
 
         private static void WaitForExitOrClear(string readerName, string firmwareVersion, ACR122U_PICCOperatingParametersControl controlOptions, ACR122U_MifareClassic_Status status, ManagerTest test)
         {
+            TraceLog.Write("WaitForKeyStart", "manualClearKey=C");
             while (true)
             {
                 ConsoleKeyInfo keyInfo = Console.ReadKey(true);
+                TraceLog.Write("KeyRead", "key=" + keyInfo.Key);
                 if (keyInfo.Key == ConsoleKey.C)
                 {
+                    TraceLog.Write("ManualClearStart", "key=C");
                     test.HandleManualClear();
+                    TraceLog.Write("ConsoleClearStart", "reason=manualClear");
                     Console.Clear();
+                    TraceLog.Write("ConsoleClearEnd", "reason=manualClear");
                     WriteStartupStatus(readerName, firmwareVersion, controlOptions, status);
+                    TraceLog.Write("ManualClearEnd", "key=C");
                     continue;
                 }
 
+                TraceLog.Write("ExitRequested", "key=" + keyInfo.Key);
                 break;
             }
         }
 
         private static void WriteStartupStatus(string readerName, string firmwareVersion, ACR122U_PICCOperatingParametersControl controlOptions, ACR122U_MifareClassic_Status status)
         {
+            TraceLog.Write("PrintStartupSummary", "readerName=" + TraceLog.FormatValue(readerName)
+                + " firmwareVersion=" + TraceLog.FormatValue(firmwareVersion)
+                + " controlOptions=" + controlOptions
+                + " controlOptionsHex=0x" + ((int)controlOptions).ToString("X")
+                + " " + FormatStartupStatus(status));
             WriteReaderSummary(readerName, firmwareVersion);
             Console.WriteLine("IC オプション:\n" + controlOptions);
             Console.WriteLine("起動時の状態:\n\tカード検出: " + status.Card + "\n\tエラー: " + status.ErrorCode);
@@ -593,6 +618,7 @@ namespace CardReader_TestFileLogger
         private static bool TryGetFirmwareVersion(WinSmartCardContext context, out string firmwareVersion)
         {
             firmwareVersion = null;
+            TraceLog.Write("FirmwareReadStart", "command=FF-00-48-00-00");
 
             try
             {
@@ -602,11 +628,15 @@ namespace CardReader_TestFileLogger
                 context.Control(command, out response, out hasCard);
 
                 firmwareVersion = ParseFirmwareVersion(response);
+                TraceLog.Write("FirmwareReadResponse", "hasCard=" + hasCard
+                    + " response=" + TraceLog.FormatBytes(response)
+                    + " firmwareVersion=" + TraceLog.FormatValue(firmwareVersion));
                 return !string.IsNullOrWhiteSpace(firmwareVersion);
             }
-            catch
+            catch (Exception ex)
             {
                 firmwareVersion = null;
+                TraceLog.Write("FirmwareReadEnd", "result=failed reason=" + TraceLog.FormatValue(CleanExceptionMessage(ex)));
                 return false;
             }
         }
@@ -631,8 +661,54 @@ namespace CardReader_TestFileLogger
 
         private static void WriteControlGuide()
         {
+            TraceLog.Write("PrintPrompt", "manualClearKey=C");
             Console.WriteLine();
             Console.WriteLine("操作: C キーでコンソールをクリア / その他のキーで終了");
+        }
+
+        private static string FormatStartupStatus(ACR122U_MifareClassic_Status status)
+        {
+            return "startupCard=" + status.Card + " startupError=" + status.ErrorCode;
+        }
+
+        private static string BuildEventDetails(ACRCardAcceptedCardScanEventArg e)
+        {
+            if (e == null)
+                return "eventArgs=null";
+
+            return "readerName=" + TraceLog.FormatValue(e.ReaderName)
+                + " userData=" + e.UserData
+                + " currentState=" + e.CurrentState
+                + " currentStateHex=0x" + ((int)e.CurrentState).ToString("X")
+                + " eventState=" + e.EventState
+                + " eventStateHex=0x" + ((int)e.EventState).ToString("X")
+                + " " + TraceLog.FormatAtr(e.ATR);
+        }
+
+        private static string BuildEventDetails(ACRCardStateChangeEventArg e)
+        {
+            if (e == null)
+                return "eventArgs=null";
+
+            return "readerName=" + TraceLog.FormatValue(e.ReaderName)
+                + " userData=" + e.UserData
+                + " currentState=" + e.CurrentState
+                + " currentStateHex=0x" + ((int)e.CurrentState).ToString("X")
+                + " eventState=" + e.EventState
+                + " eventStateHex=0x" + ((int)e.EventState).ToString("X")
+                + " " + TraceLog.FormatAtr(e.ATR);
+        }
+
+        private static string CleanExceptionMessage(Exception ex)
+        {
+            if (ex == null || string.IsNullOrWhiteSpace(ex.Message))
+                return "詳細不明";
+
+            string firstLine = ex.Message.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(firstLine))
+                return "詳細不明";
+
+            return firstLine.Trim();
         }
 
         static class FileLogger
@@ -662,6 +738,8 @@ namespace CardReader_TestFileLogger
 
             ACR122UManager Manager;
             private readonly object DisplayLock = new object();
+            private static int NextInstanceId;
+            private readonly int InstanceId;
             private bool IsCardPresentationActive;
             private string LastStateChangeKey;
             private string LastScanResultKey;
@@ -669,30 +747,44 @@ namespace CardReader_TestFileLogger
             public ManagerTest(ACR122UManager M)
             {
                 Manager = M;
+                InstanceId = Interlocked.Increment(ref NextInstanceId);
+                TraceLog.Write("ManagerTestCreated", BuildGateSnapshot());
             }
 
             public void HandleManualClear()
             {
+                TraceLog.Write("ManualClearGateResetStart", BuildGateSnapshot());
                 lock (DisplayLock)
                 {
                     // カード保持中のゲートは解除しない。手動クリア後の自動再表示を防ぐ。
                     LastScanResultKey = null;
                     LastStateChangeKey = null;
                 }
+                TraceLog.Write("ManualClearGateResetEnd", BuildGateSnapshot());
             }
 
             public void TestStateChange(object sender, ACRCardStateChangeEventArg e)
             {
-                if (ShouldSuppressCardEvent())
+                TraceLog.Write("StateChanged", "phase=enter " + BuildGateSnapshot() + " " + BuildEventDetails(e));
+
+                string gateSnapshot;
+                if (ShouldSuppressCardEvent(out gateSnapshot))
+                {
+                    TraceLog.Write("StateChanged", "SKIP reason=isCardPresentationActive " + gateSnapshot + " " + BuildEventDetails(e));
                     return;
+                }
 
                 string stateChangeKey = CardEventIdentity.BuildStateChangeKey(e);
                 lock (DisplayLock)
                 {
                     if (string.Equals(LastStateChangeKey, stateChangeKey, StringComparison.Ordinal))
+                    {
+                        TraceLog.Write("StateChanged", "SKIP reason=duplicateStateChange stateChangeKey=" + TraceLog.FormatValue(stateChangeKey) + " " + BuildGateSnapshotUnderLock() + " " + BuildEventDetails(e));
                         return;
+                    }
 
                     LastStateChangeKey = stateChangeKey;
+                    TraceLog.Write("StateChangedGateUpdate", "stateChangeKey=" + TraceLog.FormatValue(stateChangeKey) + " " + BuildGateSnapshotUnderLock());
                 }
 
                 Console.WriteLine("カードリーダーの状態が変化しました");
@@ -700,56 +792,93 @@ namespace CardReader_TestFileLogger
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
                 Console.WriteLine("ATR: {0}", e.ATRString);
                 WriteControlGuide();
+                TraceLog.Write("StateChanged", "phase=written " + BuildGateSnapshot() + " " + BuildEventDetails(e));
             }
 
             public void TestAccept(object sender, ACRCardAcceptedCardScanEventArg e)
             {
-                if (ShouldSuppressCardEvent())
-                    return;
+                TraceLog.Write("CardAccepted", "phase=enter " + BuildGateSnapshot() + " " + BuildEventDetails(e));
 
-                if (!ShouldWriteScanResult("ACCEPTED", e.ATR, e.EventState))
+                string gateSnapshot;
+                if (ShouldSuppressCardEvent(out gateSnapshot))
+                {
+                    TraceLog.Write("CardAccepted", "SKIP reason=isCardPresentationActive " + gateSnapshot + " " + BuildEventDetails(e));
                     return;
+                }
+
+                string scanResultKey;
+                if (!ShouldWriteScanResult("ACCEPTED", e.ATR, e.EventState, out scanResultKey, out gateSnapshot))
+                {
+                    TraceLog.Write("CardAccepted", "SKIP reason=duplicateScanResult scanResultKey=" + TraceLog.FormatValue(scanResultKey) + " " + gateSnapshot + " " + BuildEventDetails(e));
+                    return;
+                }
 
                 Console.WriteLine("カードが受理されました");
                 Console.WriteLine("状態値: {0}", e.EventState);
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
                 Console.WriteLine("ATR: {0}", e.ATRString);
+                TraceLog.Write("CardAccepted", "phase=written scanResultKey=" + TraceLog.FormatValue(scanResultKey) + " " + BuildGateSnapshot() + " " + BuildEventDetails(e));
             }
 
             public void TestRejected(object sender, ACRCardRejectedCardScanEventArg e)
             {
-                if (ShouldSuppressCardEvent())
-                    return;
+                TraceLog.Write("CardRejected", "phase=enter " + BuildGateSnapshot() + " " + BuildEventDetails(e));
 
-                if (!ShouldWriteScanResult("REJECTED", e.ATR, e.EventState))
+                string gateSnapshot;
+                if (ShouldSuppressCardEvent(out gateSnapshot))
+                {
+                    TraceLog.Write("CardRejected", "SKIP reason=isCardPresentationActive " + gateSnapshot + " " + BuildEventDetails(e));
                     return;
+                }
+
+                string scanResultKey;
+                if (!ShouldWriteScanResult("REJECTED", e.ATR, e.EventState, out scanResultKey, out gateSnapshot))
+                {
+                    TraceLog.Write("CardRejected", "SKIP reason=duplicateScanResult scanResultKey=" + TraceLog.FormatValue(scanResultKey) + " " + gateSnapshot + " " + BuildEventDetails(e));
+                    return;
+                }
 
                 Console.WriteLine("カードが拒否されました");
                 Console.WriteLine("状態値: {0}", e.EventState);
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
                 Console.WriteLine("ATR: {0}", e.ATRString);
+                TraceLog.Write("CardRejected", "phase=written scanResultKey=" + TraceLog.FormatValue(scanResultKey) + " " + BuildGateSnapshot() + " " + BuildEventDetails(e));
             }
 
             public void TestCardDetected(object sender, ACRCardDetectedEventArg e)
             {
-                if (!TryBeginCardPresentation())
-                    return;
+                TraceLog.Write("CardDetected", "phase=enter " + BuildGateSnapshot() + " " + BuildEventDetails(e));
 
+                string gateSnapshot;
+                string skipReason;
+                if (!TryBeginCardPresentation(out gateSnapshot, out skipReason))
+                {
+                    TraceLog.Write("CardDetected", "SKIP reason=" + skipReason + " " + gateSnapshot + " " + BuildEventDetails(e));
+                    return;
+                }
+
+                TraceLog.Write("CardDetectedGateUpdate", gateSnapshot + " " + BuildEventDetails(e));
+                TraceLog.Write("ConsoleClearStart", "reason=cardDetected " + BuildGateSnapshot() + " " + BuildEventDetails(e));
                 Console.Clear();
+                TraceLog.Write("ConsoleClearEnd", "reason=cardDetected " + BuildGateSnapshot() + " " + BuildEventDetails(e));
                 Console.WriteLine("カードを検出しました");
                 Console.WriteLine("状態値: {0}", e.EventState);
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
                 Console.WriteLine("ATR: {0}", e.ATRString);
+                TraceLog.Write("CardSummaryStart", BuildGateSnapshot() + " " + BuildEventDetails(e));
                 CardSummaryWriter.Write(Manager, e.ATR);
+                TraceLog.Write("CardSummaryEnd", BuildGateSnapshot() + " " + BuildEventDetails(e));
             }
 
             public void TestCardRemoved(object sender, ACRCardRemovedEventArg e)
             {
+                TraceLog.Write("CardRemoved", "phase=enter " + BuildGateSnapshot() + " " + BuildEventDetails(e));
                 lock (DisplayLock)
                 {
                     IsCardPresentationActive = false;
                     LastScanResultKey = null;
                     LastStateChangeKey = null;
+                    TraceLog.Write("CardRemovedGateReset", BuildGateSnapshotUnderLock() + " " + BuildEventDetails(e));
                 }
 
                 Console.WriteLine("カードが取り外されました");
@@ -757,43 +886,180 @@ namespace CardReader_TestFileLogger
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
                 Console.WriteLine("ATR: {0}", e.ATRString);
 
+                TraceLog.Write("DisconnectStart", BuildGateSnapshot() + " " + BuildEventDetails(e));
                 Manager.DisconnectToCard();
+                TraceLog.Write("DisconnectEnd", BuildGateSnapshot() + " " + BuildEventDetails(e));
             }
 
-            private bool TryBeginCardPresentation()
+            private bool TryBeginCardPresentation(out string gateSnapshot, out string skipReason)
             {
                 lock (DisplayLock)
                 {
                     if (IsCardPresentationActive)
+                    {
+                        gateSnapshot = BuildGateSnapshotUnderLock();
+                        skipReason = "isCardPresentationActive";
                         return false;
+                    }
 
                     IsCardPresentationActive = true;
+                    gateSnapshot = BuildGateSnapshotUnderLock();
+                    skipReason = null;
                     return true;
                 }
             }
 
-            private bool ShouldSuppressCardEvent()
+            private bool ShouldSuppressCardEvent(out string gateSnapshot)
             {
                 lock (DisplayLock)
                 {
+                    gateSnapshot = BuildGateSnapshotUnderLock();
                     return IsCardPresentationActive;
                 }
             }
 
-            private bool ShouldWriteScanResult(string result, byte[] atr, SmartCardStates eventState)
+            private bool ShouldWriteScanResult(string result, byte[] atr, SmartCardStates eventState, out string scanResultKey, out string gateSnapshot)
             {
-                string scanResultKey = result + ":" + CardEventIdentity.BuildDetectedCardEventKey(atr, eventState);
+                scanResultKey = result + ":" + CardEventIdentity.BuildDetectedCardEventKey(atr, eventState);
                 lock (DisplayLock)
                 {
                     if (string.Equals(LastScanResultKey, scanResultKey, StringComparison.Ordinal))
+                    {
+                        gateSnapshot = BuildGateSnapshotUnderLock();
                         return false;
+                    }
 
                     LastScanResultKey = scanResultKey;
+                    gateSnapshot = BuildGateSnapshotUnderLock();
                     return true;
                 }
             }
+
+            private string BuildGateSnapshot()
+            {
+                lock (DisplayLock)
+                {
+                    return BuildGateSnapshotUnderLock();
+                }
+            }
+
+            private string BuildGateSnapshotUnderLock()
+            {
+                return "managerTestId=" + InstanceId
+                    + " managerHash=" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Manager)
+                    + " isCardPresentationActive=" + IsCardPresentationActive
+                    + " isSuppressing=" + IsCardPresentationActive
+                    + " lastStateChangeKey=" + TraceLog.FormatValue(LastStateChangeKey)
+                    + " lastScanResultKey=" + TraceLog.FormatValue(LastScanResultKey)
+                    + " managerCardPresent=" + (Manager != null && Manager.Card != null);
+            }
         }
 
+    }
+
+    internal static class TraceLog
+    {
+        private static readonly object SyncRoot = new object();
+        private static int Sequence;
+
+        public static bool IsEnabled { get; private set; }
+        public static string LogPath { get; private set; }
+
+        public static void Initialize(string[] args)
+        {
+            bool enabledByArgument = args != null && args.Any(x => string.Equals(x, "--trace", StringComparison.OrdinalIgnoreCase));
+            bool enabledByEnvironment = string.Equals(Environment.GetEnvironmentVariable("ACR122U_TRACE"), "1", StringComparison.OrdinalIgnoreCase);
+
+            if (!enabledByArgument && !enabledByEnvironment)
+                return;
+
+            string logDirectory = Path.Combine(Environment.CurrentDirectory, "logs");
+            Directory.CreateDirectory(logDirectory);
+            LogPath = Path.Combine(logDirectory, "trace-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".log");
+            IsEnabled = true;
+
+            Console.Error.WriteLine("デバッグトレース: " + LogPath);
+            Write("TraceEnabled", "enabledByArgument=" + enabledByArgument
+                + " enabledByEnvironment=" + enabledByEnvironment
+                + " logPath=" + FormatValue(LogPath));
+        }
+
+        public static void Write(string eventName, string details)
+        {
+            if (!IsEnabled)
+                return;
+
+            string line = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:ss.fffzzz", CultureInfo.InvariantCulture)
+                + " seq=" + Interlocked.Increment(ref Sequence)
+                + " thread=" + Thread.CurrentThread.ManagedThreadId
+                + " event=" + FormatToken(eventName);
+
+            if (!string.IsNullOrWhiteSpace(details))
+                line += " " + Sanitize(details);
+
+            lock (SyncRoot)
+            {
+                File.AppendAllText(LogPath, line + Environment.NewLine, Encoding.UTF8);
+            }
+        }
+
+        public static string FormatAtr(IEnumerable<byte> atr)
+        {
+            byte[] bytes = ToArray(atr);
+            if (bytes == null || bytes.Length == 0)
+                return "atrPresent=False atrLen=0 atrSummary=" + FormatValue("なし");
+
+            return "atrPresent=True atrLen=" + bytes.Length + " atrSummary=" + FormatBytes(bytes);
+        }
+
+        public static string FormatBytes(IEnumerable<byte> bytes)
+        {
+            byte[] byteArray = ToArray(bytes);
+            if (byteArray == null)
+                return FormatValue("null");
+            if (byteArray.Length == 0)
+                return FormatValue("empty");
+
+            int visibleLength = Math.Min(byteArray.Length, 32);
+            byte[] visibleBytes = new byte[visibleLength];
+            Array.Copy(byteArray, visibleBytes, visibleLength);
+
+            string suffix = byteArray.Length > visibleLength ? "...(len=" + byteArray.Length + ")" : "";
+            return FormatValue(BitConverter.ToString(visibleBytes) + suffix);
+        }
+
+        public static string FormatValue(string value)
+        {
+            if (value == null)
+                return "null";
+
+            return "\"" + Sanitize(value).Replace("\"", "\\\"") + "\"";
+        }
+
+        private static byte[] ToArray(IEnumerable<byte> bytes)
+        {
+            if (bytes == null)
+                return null;
+
+            byte[] byteArray = bytes as byte[];
+            return byteArray ?? bytes.ToArray();
+        }
+
+        private static string FormatToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return "Unknown";
+
+            return Sanitize(value).Replace(" ", "_");
+        }
+
+        private static string Sanitize(string value)
+        {
+            if (value == null)
+                return string.Empty;
+
+            return value.Replace("\r", " ").Replace("\n", " ");
+        }
     }
 
     internal static class CardEventIdentity
@@ -836,6 +1102,7 @@ namespace CardReader_TestFileLogger
         public static void Write(ACR122UManager manager, byte[] atr)
         {
             atr = atr ?? new byte[0];
+            TraceLog.Write("CardSummaryWriteStart", TraceLog.FormatAtr(atr));
             AtrSummary atrSummary = AtrSummary.FromAtr(atr);
             CardConnectionSummary connectionSummary = ReadConnectionSummary(manager);
 
@@ -850,6 +1117,11 @@ namespace CardReader_TestFileLogger
             WriteLine("ACR122U 状態", ReadReaderStatus(manager));
             WriteLine("注意", "UID/ATS/ATR などの公開情報のみを表示します。保護領域、残高、個人情報は読み取りません。");
             Console.WriteLine();
+            TraceLog.Write("CardSummaryWriteEnd", "uid=" + TraceLog.FormatValue(connectionSummary.UidMessage)
+                + " ats=" + TraceLog.FormatValue(connectionSummary.AtsMessage)
+                + " protocol=" + TraceLog.FormatValue(connectionSummary.ProtocolMessage)
+                + " cardName=" + TraceLog.FormatValue(atrSummary.CardName)
+                + " standard=" + TraceLog.FormatValue(atrSummary.Standard));
         }
 
         private static CardConnectionSummary ReadConnectionSummary(ACR122UManager manager)
@@ -857,19 +1129,30 @@ namespace CardReader_TestFileLogger
             WinSmartCard card = null;
             bool shouldDispose = false;
             CardConnectionSummary summary = new CardConnectionSummary();
+            TraceLog.Write("CardConnectionSummaryStart", "managerHash=" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(manager)
+                + " managerCardPresent=" + (manager != null && manager.Card != null));
 
             try
             {
                 card = manager.Card ?? manager.Context.Card;
                 if (card == null)
                 {
+                    TraceLog.Write("CardConnectStart", "shareType=" + SmartCardShareTypes.SCARD_SHARE_SHARED);
                     card = manager.Context.CardConnect(SmartCardShareTypes.SCARD_SHARE_SHARED);
                     shouldDispose = true;
+                    TraceLog.Write("CardConnectEnd", "createdTemporaryConnection=True protocol=" + card.Protocol);
+                }
+                else
+                {
+                    TraceLog.Write("CardConnectSkipped", "reason=existingConnection protocol=" + card.Protocol);
                 }
 
                 summary.ProtocolMessage = FormatProtocol(card.Protocol);
                 summary.UidMessage = ReadPublicData(card, GetUidCommand, "UID").Message;
                 summary.AtsMessage = ReadPublicData(card, GetAtsCommand, "ATS").Message;
+                TraceLog.Write("CardConnectionSummaryEnd", "result=success uid=" + TraceLog.FormatValue(summary.UidMessage)
+                    + " ats=" + TraceLog.FormatValue(summary.AtsMessage)
+                    + " protocol=" + TraceLog.FormatValue(summary.ProtocolMessage));
             }
             catch (Exception ex)
             {
@@ -877,11 +1160,16 @@ namespace CardReader_TestFileLogger
                 summary.ProtocolMessage = "取得失敗 (" + reason + ")";
                 summary.UidMessage = "取得失敗 (" + reason + ")";
                 summary.AtsMessage = "取得失敗 (" + reason + ")";
+                TraceLog.Write("CardConnectionSummaryEnd", "result=failed reason=" + TraceLog.FormatValue(reason));
             }
             finally
             {
                 if (shouldDispose && card != null)
+                {
+                    TraceLog.Write("CardDisposeStart", "createdTemporaryConnection=True");
                     card.Dispose();
+                    TraceLog.Write("CardDisposeEnd", "createdTemporaryConnection=True");
+                }
             }
 
             return summary;
@@ -889,34 +1177,53 @@ namespace CardReader_TestFileLogger
 
         private static ApduReadResult ReadPublicData(WinSmartCard card, byte[] command, string label)
         {
+            TraceLog.Write(label + "ReadStart", "command=" + TraceLog.FormatBytes(command));
             try
             {
                 byte[] response;
                 card.TransmitData(command, out response);
+                TraceLog.Write(label + "ReadResponse", "response=" + TraceLog.FormatBytes(response));
 
                 if (response == null || response.Length < 2)
-                    return ApduReadResult.Failed("取得失敗 (応答が短すぎます)");
+                {
+                    string reason = "取得失敗 (応答が短すぎます)";
+                    TraceLog.Write(label + "ReadEnd", "result=failed reason=" + TraceLog.FormatValue(reason));
+                    return ApduReadResult.Failed(reason);
+                }
 
                 int sw1Index = response.Length - 2;
                 string statusWord = response[sw1Index].ToString("X2") + response[sw1Index + 1].ToString("X2");
                 byte[] data = response.Take(sw1Index).ToArray();
 
                 if (statusWord != "9000")
-                    return ApduReadResult.Failed("取得失敗 (SW=" + statusWord + ")");
+                {
+                    string reason = "取得失敗 (SW=" + statusWord + ")";
+                    TraceLog.Write(label + "ReadEnd", "result=failed statusWord=" + statusWord + " reason=" + TraceLog.FormatValue(reason));
+                    return ApduReadResult.Failed(reason);
+                }
 
                 if (data.Length == 0)
-                    return ApduReadResult.Failed("取得失敗 (データなし)");
+                {
+                    string reason = "取得失敗 (データなし)";
+                    TraceLog.Write(label + "ReadEnd", "result=failed statusWord=" + statusWord + " reason=" + TraceLog.FormatValue(reason));
+                    return ApduReadResult.Failed(reason);
+                }
 
-                return ApduReadResult.Success(FormatBytes(data));
+                string result = FormatBytes(data);
+                TraceLog.Write(label + "ReadEnd", "result=success statusWord=" + statusWord + " data=" + TraceLog.FormatValue(result));
+                return ApduReadResult.Success(result);
             }
             catch (Exception ex)
             {
-                return ApduReadResult.Failed("取得失敗 (" + label + ": " + CleanExceptionMessage(ex) + ")");
+                string reason = "取得失敗 (" + label + ": " + CleanExceptionMessage(ex) + ")";
+                TraceLog.Write(label + "ReadEnd", "result=failed reason=" + TraceLog.FormatValue(reason));
+                return ApduReadResult.Failed(reason);
             }
         }
 
         private static string ReadReaderStatus(ACR122UManager manager)
         {
+            TraceLog.Write("ReaderStatusReadStart", "managerHash=" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(manager));
             try
             {
                 bool cardPresent;
@@ -938,7 +1245,7 @@ namespace CardReader_TestFileLogger
                     out bitRateInTransmition,
                     out modulationType);
 
-                return "カード=" + FormatBool(cardPresent)
+                string status = "カード=" + FormatBool(cardPresent)
                     + ", RF フィールド=" + FormatBool(fieldPresent)
                     + ", ターゲット数=" + numberOfTargets
                     + ", 論理番号=" + logicalNumber
@@ -946,10 +1253,21 @@ namespace CardReader_TestFileLogger
                     + ", 送信=" + FormatBitRate(bitRateInTransmition)
                     + ", 変調=" + FormatModulationType(modulationType)
                     + ", エラー=" + errorCode;
+                TraceLog.Write("ReaderStatusReadEnd", "result=success cardPresent=" + cardPresent
+                    + " fieldPresent=" + fieldPresent
+                    + " numberOfTargets=" + numberOfTargets
+                    + " logicalNumber=" + logicalNumber
+                    + " bitRateInReception=" + bitRateInReception
+                    + " bitRateInTransmition=" + bitRateInTransmition
+                    + " modulationType=" + modulationType
+                    + " errorCode=" + errorCode);
+                return status;
             }
             catch (Exception ex)
             {
-                return "取得失敗 (" + CleanExceptionMessage(ex) + ")";
+                string reason = CleanExceptionMessage(ex);
+                TraceLog.Write("ReaderStatusReadEnd", "result=failed reason=" + TraceLog.FormatValue(reason));
+                return "取得失敗 (" + reason + ")";
             }
         }
 

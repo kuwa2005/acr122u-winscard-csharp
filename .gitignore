@@ -15,6 +15,7 @@
 *.pdb
 *.cache
 *.log
+logs/
 *.FileListAbsolute.txt
 *.CopyComplete
 *.resources
