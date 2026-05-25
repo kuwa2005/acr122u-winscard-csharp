@@ -873,6 +873,14 @@ namespace CardReader_TestFileLogger
             public void TestCardRemoved(object sender, ACRCardRemovedEventArg e)
             {
                 TraceLog.Write("CardRemoved", "phase=enter " + BuildGateSnapshot() + " " + BuildEventDetails(e));
+
+                string readerStatusDetails;
+                if (IsReaderStillSeeingCard(out readerStatusDetails))
+                {
+                    TraceLog.Write("CardRemoved", "SKIP reason=readerStillReportsCard " + readerStatusDetails + " " + BuildGateSnapshot() + " " + BuildEventDetails(e));
+                    return;
+                }
+
                 lock (DisplayLock)
                 {
                     IsCardPresentationActive = false;
@@ -889,6 +897,49 @@ namespace CardReader_TestFileLogger
                 TraceLog.Write("DisconnectStart", BuildGateSnapshot() + " " + BuildEventDetails(e));
                 Manager.DisconnectToCard();
                 TraceLog.Write("DisconnectEnd", BuildGateSnapshot() + " " + BuildEventDetails(e));
+            }
+
+            private bool IsReaderStillSeeingCard(out string statusDetails)
+            {
+                statusDetails = "readerStatus=result=notChecked";
+
+                try
+                {
+                    bool cardPresent;
+                    ACR122U_StatusErrorCodes errorCode;
+                    bool fieldPresent;
+                    byte numberOfTargets;
+                    byte logicalNumber;
+                    ACR122U_StatusBitRateInReception bitRateInReception;
+                    ACR122U_StatusBitsRateInTransmiton bitRateInTransmition;
+                    ACR122U_StatusModulationType modulationType;
+
+                    Manager.GetStatus(
+                        out cardPresent,
+                        out errorCode,
+                        out fieldPresent,
+                        out numberOfTargets,
+                        out logicalNumber,
+                        out bitRateInReception,
+                        out bitRateInTransmition,
+                        out modulationType);
+
+                    statusDetails = "readerStatus=result=success"
+                        + " cardPresent=" + cardPresent
+                        + " fieldPresent=" + fieldPresent
+                        + " numberOfTargets=" + numberOfTargets
+                        + " logicalNumber=" + logicalNumber
+                        + " bitRateInReception=" + bitRateInReception
+                        + " bitRateInTransmition=" + bitRateInTransmition
+                        + " modulationType=" + modulationType
+                        + " errorCode=" + errorCode;
+                    return cardPresent || numberOfTargets > 0;
+                }
+                catch (Exception ex)
+                {
+                    statusDetails = "readerStatus=result=failed reason=" + TraceLog.FormatValue(CleanExceptionMessage(ex));
+                    return false;
+                }
             }
 
             private bool TryBeginCardPresentation(out string gateSnapshot, out string skipReason)
