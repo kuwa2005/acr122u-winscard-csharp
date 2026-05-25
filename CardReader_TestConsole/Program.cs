@@ -504,8 +504,7 @@ namespace CardReader_TestFileLogger
             ACR122U_PICCOperatingParametersControl ControlOptions = ACR122U_PICCOperatingParametersControl.AllOn;
             Manager.SetPICCOperatingParameterState(ref ControlOptions);
             //
-            Console.WriteLine("PIC options:\n" + ControlOptions);
-            Console.WriteLine("Starting Status:\n\tCard: " + Status.Card + "\n\tError: " + Status.ErrorCode);
+            WriteStartupStatus(ControlOptions, Status);
             //
             ACR122UManager.GlobalCardCheck = (e) =>
             {
@@ -535,8 +534,37 @@ namespace CardReader_TestFileLogger
             Manager.CardDetected += Test.TestCardDetected;
             Manager.CardRemoved += Test.TestCardRemoved;
             List<string> Names = WinSmartCardContext.ListReadersAsStringsStatic();
-            Console.ReadKey();
+            WaitForExitOrClear(ControlOptions, Status);
 
+        }
+
+        private static void WaitForExitOrClear(ACR122U_PICCOperatingParametersControl controlOptions, ACR122U_MifareClassic_Status status)
+        {
+            while (true)
+            {
+                ConsoleKeyInfo keyInfo = Console.ReadKey(true);
+                if (keyInfo.Key == ConsoleKey.C)
+                {
+                    Console.Clear();
+                    WriteStartupStatus(controlOptions, status);
+                    continue;
+                }
+
+                break;
+            }
+        }
+
+        private static void WriteStartupStatus(ACR122U_PICCOperatingParametersControl controlOptions, ACR122U_MifareClassic_Status status)
+        {
+            Console.WriteLine("PIC options:\n" + controlOptions);
+            Console.WriteLine("Starting Status:\n\tCard: " + status.Card + "\n\tError: " + status.ErrorCode);
+            WriteControlGuide();
+        }
+
+        private static void WriteControlGuide()
+        {
+            Console.WriteLine();
+            Console.WriteLine("操作: C: コンソールをクリア / その他のキー: 終了");
         }
 
         static class FileLogger
