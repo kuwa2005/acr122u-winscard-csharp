@@ -858,9 +858,6 @@ namespace CardReader_TestFileLogger
                 }
 
                 TraceLog.Write("CardDetectedGateUpdate", gateSnapshot + " " + BuildEventDetails(e));
-                TraceLog.Write("ConsoleClearStart", "reason=cardDetected " + BuildGateSnapshot() + " " + BuildEventDetails(e));
-                Console.Clear();
-                TraceLog.Write("ConsoleClearEnd", "reason=cardDetected " + BuildGateSnapshot() + " " + BuildEventDetails(e));
                 Console.WriteLine("カードを検出しました");
                 Console.WriteLine("状態値: {0}", e.EventState);
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);

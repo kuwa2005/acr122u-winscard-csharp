@@ -132,7 +132,7 @@ $env:ACR122U_TRACE = "1"
 .\CardReader_TestConsole\bin\Debug\CardReader_TestConsole.exe
 ```
 
-トレース有効時は、実行ディレクトリ配下の `logs/trace-YYYYMMDD-HHMMSS.log` に追記します。ログには時刻、連番、スレッド ID、`CardDetected` / `CardRemoved` / `CardRejected` / `StateChanged` / 手動 C クリア / `Console.Clear` / UID・ATS 取得開始終了、ゲート状態、状態値、ATR 要約、UID・ATS の結果または失敗理由、早期 return の `SKIP reason=...` が記録されます。`logs/` と `*.log` は `.gitignore` の対象です。
+トレース有効時は、実行ディレクトリ配下の `logs/trace-YYYYMMDD-HHMMSS.log` に追記します。ログには時刻、連番、スレッド ID、`CardDetected` / `CardRemoved` / `CardRejected` / `StateChanged` / 手動 C クリア時の `Console.Clear` / UID・ATS 取得開始終了、ゲート状態、状態値、ATR 要約、UID・ATS の結果または失敗理由、早期 return の `SKIP reason=...` が記録されます。`logs/` と `*.log` は `.gitignore` の対象です。
 
 現在の `CardReader_TestConsole/Program.cs` は、おおむね次の流れで動作します。
 
