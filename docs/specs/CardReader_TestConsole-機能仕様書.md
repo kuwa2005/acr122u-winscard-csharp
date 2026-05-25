@@ -6,14 +6,15 @@
 
 ## 概要
 
-`CardReader_TestConsole.exe` は、ACS ACR122U USB NFC リーダーを Windows の PC/SC（WinSCard）経由で操作し、カード検出イベントと UID 取得を確認するためのコンソールアプリケーションです。
+`CardReader_TestConsole.exe` は、ACS ACR122U USB NFC リーダーを Windows の PC/SC（WinSCard）経由で操作し、カード検出イベントとカードサマリー表示を確認するためのコンソールアプリケーションです。
 
 ## 主な機能
 
 - PC/SC に登録されたスマートカードリーダー一覧から ACR122U リーダーを抽出する。
+- 起動時に、PC/SC から取得したリーダー名、取得できる場合はファームウェアバージョン、資料ベースの ACR122U 仕様を表示する。
 - `SCardGetStatusChange` を使う監視スレッドでカードの状態変化を検出する。
 - ACR122U の PICC operating parameter を `AllOn` に設定する。
-- カード受理時に `ConnectToNTAGCard()` で接続し、UID バイト列を取得して表示する。
+- カード検出時に ATR、UID、ATS、ATR から推定したカード種別/規格、ACR122U 状態を表示する。
 
 ## ビルド / 実行条件
 
@@ -25,6 +26,8 @@
 - .NET SDK または Visual Studio / MSBuild が使える環境
 
 `bin/` と `obj/` は生成物であり、コミット対象にしません。
+
+起動時リーダー概要とカードサマリーでは、カードの保護領域、個人情報、残高などの内容は読み取りません。ファームウェアバージョンは ACR122U の `FF 00 48 00 00` による取得を試み、カード検出時の UID/ATS は `FF CA 00 00 00` / `FF CA 01 00 00` による取得を試みます。取得できない場合は、その旨と簡潔な理由を表示します。
 
 ## セキュリティ / SmartScreen / カード保護領域に関する注意
 

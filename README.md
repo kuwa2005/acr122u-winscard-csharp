@@ -111,7 +111,7 @@ Visual Studio から実行する場合:
 2. ACR122U を接続します。
 3. 対象カードを手元に用意します。
 4. デバッグ実行します。
-5. コンソールに PICC 設定、開始ステータス、カード検出/取り外し、UID などが表示されます。
+5. コンソールに ACR122U リーダー概要、PICC 設定、開始ステータス、カード検出/取り外し、カードサマリーなどが表示されます。
 
 コマンドラインから実行する場合:
 
@@ -123,15 +123,17 @@ Visual Studio から実行する場合:
 
 1. `ACR122UManager.GetACR122UReaders().FirstOrDefault()` で最初の ACR122U リーダーを選択
 2. `ACR122UManager` を作成し、状態監視スレッドを開始
-3. PICC operating parameter を `AllOn` に設定
-4. `GlobalCardCheck` で ATR をチェック
-5. カード検出イベントを登録
-6. 受理されたカードに対して `ConnectToNTAGCard()` で接続し、UID バイト列を取得
-7. キー入力まで待機
+3. リーダー名と、取得できる場合は `FF 00 48 00 00` でファームウェアバージョンを取得
+4. 資料ベースの ACR122U 仕様と実機取得情報を起動時に表示
+5. PICC operating parameter を `AllOn` に設定
+6. `GlobalCardCheck` で ATR をチェック
+7. カード検出イベントを登録
+8. 検出カードに対して公開 APDU (`FF CA 00 00 00`, `FF CA 01 00 00`) を試行し、UID、ATS、ATR 由来の推定カード種別、通信状態を表示
+9. キー入力まで待機
 
 ## 使い方の例
 
-ACR122U を検出して UID を読む最小例のイメージです。
+ACR122U を検出して UID を読む最小例のイメージです。`CardReader_TestConsole` 本体では、カード検出時に UID だけでなく ATR/ATS と推定カード種別も表示します。
 
 ```csharp
 using System;

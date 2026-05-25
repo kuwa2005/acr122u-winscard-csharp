@@ -497,15 +497,18 @@ namespace CardReader_TestFileLogger
         {
             Console.OutputEncoding = Encoding.UTF8;
             byte[] AcceptedATR = new byte[] { 0x3B, 0x8F, 0x80, 0x01, 0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x68 };
-            ACR122UManager Manager = new ACR122UManager(ACR122UManager.GetACR122UReaders().FirstOrDefault());
+            string readerName = ACR122UManager.GetACR122UReaders().FirstOrDefault();
+            ACR122UManager Manager = new ACR122UManager(readerName);
             //
             ACR122U_MifareClassic_Status Status;
             Manager.GetStatus(out Status);
             //
             ACR122U_PICCOperatingParametersControl ControlOptions = ACR122U_PICCOperatingParametersControl.AllOn;
             Manager.SetPICCOperatingParameterState(ref ControlOptions);
+            string firmwareVersion;
+            TryGetFirmwareVersion(Manager.Context, out firmwareVersion);
             //
-            WriteStartupStatus(ControlOptions, Status);
+            WriteStartupStatus(readerName, firmwareVersion, ControlOptions, Status);
             //
             ACR122UManager.GlobalCardCheck = (e) =>
             {
@@ -535,11 +538,11 @@ namespace CardReader_TestFileLogger
             Manager.CardDetected += Test.TestCardDetected;
             Manager.CardRemoved += Test.TestCardRemoved;
             List<string> Names = WinSmartCardContext.ListReadersAsStringsStatic();
-            WaitForExitOrClear(ControlOptions, Status);
+            WaitForExitOrClear(readerName, firmwareVersion, ControlOptions, Status);
 
         }
 
-        private static void WaitForExitOrClear(ACR122U_PICCOperatingParametersControl controlOptions, ACR122U_MifareClassic_Status status)
+        private static void WaitForExitOrClear(string readerName, string firmwareVersion, ACR122U_PICCOperatingParametersControl controlOptions, ACR122U_MifareClassic_Status status)
         {
             while (true)
             {
@@ -547,7 +550,7 @@ namespace CardReader_TestFileLogger
                 if (keyInfo.Key == ConsoleKey.C)
                 {
                     Console.Clear();
-                    WriteStartupStatus(controlOptions, status);
+                    WriteStartupStatus(readerName, firmwareVersion, controlOptions, status);
                     continue;
                 }
 
@@ -555,11 +558,74 @@ namespace CardReader_TestFileLogger
             }
         }
 
-        private static void WriteStartupStatus(ACR122U_PICCOperatingParametersControl controlOptions, ACR122U_MifareClassic_Status status)
+        private static void WriteStartupStatus(string readerName, string firmwareVersion, ACR122U_PICCOperatingParametersControl controlOptions, ACR122U_MifareClassic_Status status)
         {
+            WriteReaderSummary(readerName, firmwareVersion);
             Console.WriteLine("IC オプション:\n" + controlOptions);
             Console.WriteLine("起動時の状態:\n\tカード検出: " + status.Card + "\n\tエラー: " + status.ErrorCode);
             WriteControlGuide();
+        }
+
+        private static void WriteReaderSummary(string readerName, string firmwareVersion)
+        {
+            Console.WriteLine("=== ACR122U リーダー概要 ===");
+            Console.WriteLine("[実機 / PC/SC から取得]");
+            Console.WriteLine("\tリーダー名: " + GetDisplayValue(readerName));
+            Console.WriteLine("\tファームウェアバージョン: " + GetDisplayValue(firmwareVersion) + (string.IsNullOrWhiteSpace(firmwareVersion) ? " (APDU: FF 00 48 00 00)" : ""));
+            Console.WriteLine();
+            Console.WriteLine("[資料ベースの既知仕様]");
+            Console.WriteLine("\t対象機種: ACR122U USB NFC Reader");
+            Console.WriteLine("\tインターフェース: USB 2.0 Full Speed (12 Mbps) / PC/SC / CCID / WinSCard");
+            Console.WriteLine("\t対応カード/タグ: ISO 14443 Type A/B, MIFARE, FeliCa, ISO 18092 / NFC Forum Type 1-4");
+            Console.WriteLine("\t周波数: 13.56 MHz");
+            Console.WriteLine("\t通信速度: 106 Kbps / 212 Kbps / 最大 424 Kbps");
+            Console.WriteLine("\t読取距離: 最大 50 mm (タグ種別に依存)");
+            Console.WriteLine("\t注意: このサマリーでは保護領域、個人情報、残高などのカード内容は読み取りません。");
+            Console.WriteLine();
+        }
+
+        private static string GetDisplayValue(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "取得できませんでした" : value;
+        }
+
+        private static bool TryGetFirmwareVersion(WinSmartCardContext context, out string firmwareVersion)
+        {
+            firmwareVersion = null;
+
+            try
+            {
+                bool hasCard;
+                byte[] response;
+                byte[] command = new byte[] { 0xFF, 0x00, 0x48, 0x00, 0x00 };
+                context.Control(command, out response, out hasCard);
+
+                firmwareVersion = ParseFirmwareVersion(response);
+                return !string.IsNullOrWhiteSpace(firmwareVersion);
+            }
+            catch
+            {
+                firmwareVersion = null;
+                return false;
+            }
+        }
+
+        private static string ParseFirmwareVersion(byte[] response)
+        {
+            if (response == null || response.Length == 0)
+                return null;
+
+            int payloadLength = response.Length;
+            if (response.Length >= 2 && response[response.Length - 2] == 0x90 && response[response.Length - 1] == 0x00)
+                payloadLength -= 2;
+
+            while (payloadLength > 0 && response[payloadLength - 1] == 0x00)
+                payloadLength--;
+
+            if (payloadLength <= 0)
+                return null;
+
+            return Encoding.ASCII.GetString(response, 0, payloadLength).Trim();
         }
 
         private static void WriteControlGuide()
@@ -606,6 +672,7 @@ namespace CardReader_TestFileLogger
                 Console.WriteLine("状態値: {0}", e.EventState);
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
                 Console.WriteLine("ATR: {0}", e.ATRString);
+                WriteControlGuide();
             }
 
             public void TestAccept(object sender, ACRCardAcceptedCardScanEventArg e)
@@ -614,18 +681,6 @@ namespace CardReader_TestFileLogger
                 Console.WriteLine("状態値: {0}", e.EventState);
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
                 Console.WriteLine("ATR: {0}", e.ATRString);
-
-
-                if (Manager.Card == null)
-                {
-                    ACR122U_NTAG215_SmartCard Card = Manager.ConnectToNTAGCard();
-                    byte[] receivedUID = null;
-                    Console.WriteLine(Card.GetcardUIDBytes(out receivedUID));
-                    Console.WriteLine(BitConverter.ToString(receivedUID));
-                    Manager.DisconnectToCard();
-                }
-                
-
             }
 
             public void TestRejected(object sender, ACRCardRejectedCardScanEventArg e)
@@ -638,10 +693,12 @@ namespace CardReader_TestFileLogger
 
             public void TestCardDetected(object sender, ACRCardDetectedEventArg e)
             {
+                Console.Clear();
                 Console.WriteLine("カードを検出しました");
                 Console.WriteLine("状態値: {0}", e.EventState);
                 Console.WriteLine("状態値(16進): {0:x}", (int)e.EventState);
                 Console.WriteLine("ATR: {0}", e.ATRString);
+                CardSummaryWriter.Write(Manager, e.ATR);
             }
 
             public void TestCardRemoved(object sender, ACRCardRemovedEventArg e)
@@ -655,5 +712,388 @@ namespace CardReader_TestFileLogger
             }
         }
 
+    }
+
+    internal static class CardSummaryWriter
+    {
+        private static readonly byte[] GetUidCommand = new byte[] { 0xFF, 0xCA, 0x00, 0x00, 0x00 };
+        private static readonly byte[] GetAtsCommand = new byte[] { 0xFF, 0xCA, 0x01, 0x00, 0x00 };
+
+        public static void Write(ACR122UManager manager, byte[] atr)
+        {
+            atr = atr ?? new byte[0];
+            AtrSummary atrSummary = AtrSummary.FromAtr(atr);
+            CardConnectionSummary connectionSummary = ReadConnectionSummary(manager);
+
+            Console.WriteLine("カードサマリー:");
+            WriteLine("ATR", FormatBytes(atr));
+            WriteLine("UID", connectionSummary.UidMessage);
+            WriteLine("ATS", connectionSummary.AtsMessage);
+            WriteLine("推定カード", atrSummary.CardName);
+            WriteLine("推定規格", atrSummary.Standard);
+            WriteLine("Historical bytes", atrSummary.HistoricalBytes);
+            WriteLine("PC/SC プロトコル", connectionSummary.ProtocolMessage);
+            WriteLine("ACR122U 状態", ReadReaderStatus(manager));
+            WriteLine("注意", "UID/ATS/ATR などの公開情報のみを表示します。保護領域、残高、個人情報は読み取りません。");
+            Console.WriteLine();
+        }
+
+        private static CardConnectionSummary ReadConnectionSummary(ACR122UManager manager)
+        {
+            WinSmartCard card = null;
+            bool shouldDispose = false;
+            CardConnectionSummary summary = new CardConnectionSummary();
+
+            try
+            {
+                card = manager.Card ?? manager.Context.Card;
+                if (card == null)
+                {
+                    card = manager.Context.CardConnect(SmartCardShareTypes.SCARD_SHARE_SHARED);
+                    shouldDispose = true;
+                }
+
+                summary.ProtocolMessage = FormatProtocol(card.Protocol);
+                summary.UidMessage = ReadPublicData(card, GetUidCommand, "UID").Message;
+                summary.AtsMessage = ReadPublicData(card, GetAtsCommand, "ATS").Message;
+            }
+            catch (Exception ex)
+            {
+                string reason = CleanExceptionMessage(ex);
+                summary.ProtocolMessage = "取得失敗 (" + reason + ")";
+                summary.UidMessage = "取得失敗 (" + reason + ")";
+                summary.AtsMessage = "取得失敗 (" + reason + ")";
+            }
+            finally
+            {
+                if (shouldDispose && card != null)
+                    card.Dispose();
+            }
+
+            return summary;
+        }
+
+        private static ApduReadResult ReadPublicData(WinSmartCard card, byte[] command, string label)
+        {
+            try
+            {
+                byte[] response;
+                card.TransmitData(command, out response);
+
+                if (response == null || response.Length < 2)
+                    return ApduReadResult.Failed("取得失敗 (応答が短すぎます)");
+
+                int sw1Index = response.Length - 2;
+                string statusWord = response[sw1Index].ToString("X2") + response[sw1Index + 1].ToString("X2");
+                byte[] data = response.Take(sw1Index).ToArray();
+
+                if (statusWord != "9000")
+                    return ApduReadResult.Failed("取得失敗 (SW=" + statusWord + ")");
+
+                if (data.Length == 0)
+                    return ApduReadResult.Failed("取得失敗 (データなし)");
+
+                return ApduReadResult.Success(FormatBytes(data));
+            }
+            catch (Exception ex)
+            {
+                return ApduReadResult.Failed("取得失敗 (" + label + ": " + CleanExceptionMessage(ex) + ")");
+            }
+        }
+
+        private static string ReadReaderStatus(ACR122UManager manager)
+        {
+            try
+            {
+                bool cardPresent;
+                ACR122U_StatusErrorCodes errorCode;
+                bool fieldPresent;
+                byte numberOfTargets;
+                byte logicalNumber;
+                ACR122U_StatusBitRateInReception bitRateInReception;
+                ACR122U_StatusBitsRateInTransmiton bitRateInTransmition;
+                ACR122U_StatusModulationType modulationType;
+
+                manager.GetStatus(
+                    out cardPresent,
+                    out errorCode,
+                    out fieldPresent,
+                    out numberOfTargets,
+                    out logicalNumber,
+                    out bitRateInReception,
+                    out bitRateInTransmition,
+                    out modulationType);
+
+                return "カード=" + FormatBool(cardPresent)
+                    + ", RF フィールド=" + FormatBool(fieldPresent)
+                    + ", ターゲット数=" + numberOfTargets
+                    + ", 論理番号=" + logicalNumber
+                    + ", 受信=" + FormatBitRate(bitRateInReception)
+                    + ", 送信=" + FormatBitRate(bitRateInTransmition)
+                    + ", 変調=" + FormatModulationType(modulationType)
+                    + ", エラー=" + errorCode;
+            }
+            catch (Exception ex)
+            {
+                return "取得失敗 (" + CleanExceptionMessage(ex) + ")";
+            }
+        }
+
+        private static void WriteLine(string label, string value)
+        {
+            Console.WriteLine("\t" + label + ": " + value);
+        }
+
+        private static string FormatProtocol(SmartCardProtocols protocol)
+        {
+            switch (protocol)
+            {
+                case SmartCardProtocols.SCARD_PROTOCOL_T0:
+                    return "T=0";
+                case SmartCardProtocols.SCARD_PROTOCOL_T1:
+                    return "T=1";
+                case SmartCardProtocols.SCARD_PROTOCOL_RAW:
+                    return "RAW";
+                case SmartCardProtocols.SCARD_PROTOCOL_UNDEFINED:
+                    return "未確定";
+                default:
+                    return protocol.ToString();
+            }
+        }
+
+        private static string FormatBitRate(ACR122U_StatusBitRateInReception bitRate)
+        {
+            switch (bitRate)
+            {
+                case ACR122U_StatusBitRateInReception.Is106kbps:
+                    return "106 kbps";
+                case ACR122U_StatusBitRateInReception.Is212kbps:
+                    return "212 kbps";
+                case ACR122U_StatusBitRateInReception.Is424kbps:
+                    return "424 kbps";
+                case ACR122U_StatusBitRateInReception.NoReception:
+                    return "未受信";
+                default:
+                    return bitRate.ToString();
+            }
+        }
+
+        private static string FormatBitRate(ACR122U_StatusBitsRateInTransmiton bitRate)
+        {
+            switch (bitRate)
+            {
+                case ACR122U_StatusBitsRateInTransmiton.Is106kbps:
+                    return "106 kbps";
+                case ACR122U_StatusBitsRateInTransmiton.Is212kbps:
+                    return "212 kbps";
+                case ACR122U_StatusBitsRateInTransmiton.Is424kbps:
+                    return "424 kbps";
+                case ACR122U_StatusBitsRateInTransmiton.NoTransmiton:
+                    return "未送信";
+                default:
+                    return bitRate.ToString();
+            }
+        }
+
+        private static string FormatModulationType(ACR122U_StatusModulationType modulationType)
+        {
+            switch (modulationType)
+            {
+                case ACR122U_StatusModulationType.ISO1443orMifare:
+                    return "ISO 14443 / MIFARE";
+                case ACR122U_StatusModulationType.ActiveMode:
+                    return "Active mode";
+                case ACR122U_StatusModulationType.InnovisionJewelTag:
+                    return "Topaz / Jewel";
+                case ACR122U_StatusModulationType.NoCardDetected:
+                    return "カード未検出";
+                default:
+                    return modulationType.ToString();
+            }
+        }
+
+        private static string FormatBool(bool value)
+        {
+            return value ? "あり" : "なし";
+        }
+
+        private static string FormatBytes(IEnumerable<byte> bytes)
+        {
+            if (bytes == null)
+                return "なし";
+
+            byte[] byteArray = bytes.ToArray();
+            if (byteArray.Length == 0)
+                return "なし";
+
+            return BitConverter.ToString(byteArray);
+        }
+
+        private static string CleanExceptionMessage(Exception ex)
+        {
+            if (ex == null || string.IsNullOrWhiteSpace(ex.Message))
+                return "詳細不明";
+
+            string firstLine = ex.Message.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(firstLine))
+                return "詳細不明";
+
+            return firstLine.Trim();
+        }
+
+        private sealed class CardConnectionSummary
+        {
+            public string UidMessage { get; set; } = "未取得";
+            public string AtsMessage { get; set; } = "未取得";
+            public string ProtocolMessage { get; set; } = "未取得";
+        }
+
+        private sealed class ApduReadResult
+        {
+            private ApduReadResult(string message)
+            {
+                Message = message;
+            }
+
+            public string Message { get; private set; }
+
+            public static ApduReadResult Success(string data)
+            {
+                return new ApduReadResult(data);
+            }
+
+            public static ApduReadResult Failed(string reason)
+            {
+                return new ApduReadResult(reason);
+            }
+        }
+
+        private sealed class AtrSummary
+        {
+            public string CardName { get; private set; }
+            public string Standard { get; private set; }
+            public string HistoricalBytes { get; private set; }
+
+            private AtrSummary(string cardName, string standard, string historicalBytes)
+            {
+                CardName = cardName;
+                Standard = standard;
+                HistoricalBytes = historicalBytes;
+            }
+
+            public static AtrSummary FromAtr(byte[] atr)
+            {
+                if (atr == null || atr.Length == 0)
+                    return Unknown("なし");
+
+                byte[] historicalBytes = ExtractHistoricalBytes(atr);
+                string historicalBytesText = FormatBytes(historicalBytes);
+
+                int pcscRidIndex = IndexOf(atr, new byte[] { 0xA0, 0x00, 0x00, 0x03, 0x06 });
+                if (pcscRidIndex >= 0 && pcscRidIndex + 7 < atr.Length)
+                {
+                    byte standardCode = atr[pcscRidIndex + 5];
+                    byte cardNameHi = atr[pcscRidIndex + 6];
+                    byte cardNameLo = atr[pcscRidIndex + 7];
+                    return new AtrSummary(
+                        GetCardName(cardNameHi, cardNameLo),
+                        GetStandardName(standardCode, cardNameHi, cardNameLo),
+                        historicalBytesText);
+                }
+
+                if (historicalBytes != null && historicalBytes.Length > 0)
+                    return new AtrSummary("不明", "ISO 14443-4 Type A/B など (Historical bytes から詳細推定不可)", historicalBytesText);
+
+                return Unknown(historicalBytesText);
+            }
+
+            private static AtrSummary Unknown(string historicalBytesText)
+            {
+                return new AtrSummary("不明", "不明", historicalBytesText);
+            }
+
+            private static byte[] ExtractHistoricalBytes(byte[] atr)
+            {
+                if (atr == null || atr.Length < 2)
+                    return new byte[0];
+
+                int historicalByteLength = atr[1] & 0x0F;
+                int historicalByteStart = 4;
+                if (historicalByteLength <= 0 || atr.Length <= historicalByteStart)
+                    return new byte[0];
+
+                int availableLength = Math.Min(historicalByteLength, atr.Length - historicalByteStart);
+                byte[] historicalBytes = new byte[availableLength];
+                Array.Copy(atr, historicalByteStart, historicalBytes, 0, availableLength);
+                return historicalBytes;
+            }
+
+            private static int IndexOf(byte[] source, byte[] pattern)
+            {
+                if (source == null || pattern == null || pattern.Length == 0 || source.Length < pattern.Length)
+                    return -1;
+
+                for (int i = 0; i <= source.Length - pattern.Length; i++)
+                {
+                    bool matched = true;
+                    for (int j = 0; j < pattern.Length; j++)
+                    {
+                        if (source[i + j] != pattern[j])
+                        {
+                            matched = false;
+                            break;
+                        }
+                    }
+
+                    if (matched)
+                        return i;
+                }
+
+                return -1;
+            }
+
+            private static string GetStandardName(byte standardCode, byte cardNameHi, byte cardNameLo)
+            {
+                if (cardNameHi == 0xF0 && (cardNameLo == 0x11 || cardNameLo == 0x12))
+                    return "FeliCa / ISO 18092";
+
+                if (cardNameHi == 0xF0 && cardNameLo == 0x04)
+                    return "NFC Forum Type 1 / Topaz / Jewel";
+
+                switch (standardCode)
+                {
+                    case 0x03:
+                        return "ISO 14443 Type A Part 3";
+                    case 0x11:
+                        return "ISO 14443 Type A Part 4";
+                    case 0x12:
+                        return "ISO 14443 Type B Part 4";
+                    default:
+                        return "不明 (Standard=0x" + standardCode.ToString("X2") + ")";
+                }
+            }
+
+            private static string GetCardName(byte cardNameHi, byte cardNameLo)
+            {
+                if (cardNameHi == 0x00 && cardNameLo == 0x01)
+                    return "MIFARE Classic 1K";
+                if (cardNameHi == 0x00 && cardNameLo == 0x02)
+                    return "MIFARE Classic 4K";
+                if (cardNameHi == 0x00 && cardNameLo == 0x03)
+                    return "MIFARE Ultralight";
+                if (cardNameHi == 0x00 && cardNameLo == 0x26)
+                    return "MIFARE Mini";
+                if (cardNameHi == 0xF0 && cardNameLo == 0x04)
+                    return "Topaz / Jewel";
+                if (cardNameHi == 0xF0 && cardNameLo == 0x11)
+                    return "FeliCa 212K";
+                if (cardNameHi == 0xF0 && cardNameLo == 0x12)
+                    return "FeliCa 424K";
+                if (cardNameHi == 0xFF)
+                    return "未定義 (SAK=0x" + cardNameLo.ToString("X2") + ")";
+
+                return "不明 (Card Name=0x" + cardNameHi.ToString("X2") + cardNameLo.ToString("X2") + ")";
+            }
+        }
     }
 }
