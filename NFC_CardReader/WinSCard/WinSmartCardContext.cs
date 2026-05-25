@@ -76,7 +76,7 @@ namespace NFC_CardReader.WinSCard
                 LastResultCode = WinSCard.SCardControl(TempCard, IOTL, SendCommand, ref ReceivedResponse, ref outBytes);
                 if (LastResultCode != ErrorCodes.SCARD_S_SUCCESS)
                     throw new WinSCardException(LastResultCode, WinSCard.GetScardErrMsg(LastResultCode) + "\nError perceived durring Control");
-                LastResultCode = WinSCard.SCardDisconnect(TempCard, SmartCardDispostion.SCARD_RESET_CARD);
+                LastResultCode = WinSCard.SCardDisconnect(TempCard, SmartCardDispostion.SCARD_LEAVE_CARD);
                 if (LastResultCode != ErrorCodes.SCARD_S_SUCCESS)
                     throw new WinSCardException(LastResultCode, WinSCard.GetScardErrMsg(LastResultCode) + "\nError perceived durring Card Release");
                 Array.Resize(ref ReceivedResponse, outBytes);

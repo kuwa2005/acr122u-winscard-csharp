@@ -254,12 +254,20 @@ namespace NFC_CardReader.WinSCard
         /// </summary>
         public void Dispose()
         {
+            Dispose(SmartCardDispostion.SCARD_RESET_CARD);
+        }
+
+        /// <summary>
+        /// Destroys Card with the requested PC/SC disposition and notifies parent.
+        /// </summary>
+        public void Dispose(SmartCardDispostion Dispostion)
+        {
             if (!Disposed)
             {
                 Disposed = true;
                 IsAliveWithContext = false;
                 Parent.NotifyOfCardsDeath();
-                WinSCard.SCardDisconnect(_Card, SmartCardDispostion.SCARD_RESET_CARD);
+                WinSCard.SCardDisconnect(_Card, Dispostion);
             }
         }
 
@@ -268,13 +276,7 @@ namespace NFC_CardReader.WinSCard
         /// </summary>
         ~WinSmartCard()
         {
-            if (!Disposed)
-            {
-                Disposed = true;
-                IsAliveWithContext = false;
-                Parent.NotifyOfCardsDeath();
-                WinSCard.SCardDisconnect(_Card, SmartCardDispostion.SCARD_RESET_CARD);
-            }
+            Dispose(SmartCardDispostion.SCARD_RESET_CARD);
         }
     }
 }

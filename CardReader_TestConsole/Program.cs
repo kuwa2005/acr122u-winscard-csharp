@@ -1167,7 +1167,7 @@ namespace CardReader_TestFileLogger
                 if (shouldDispose && card != null)
                 {
                     TraceLog.Write("CardDisposeStart", "createdTemporaryConnection=True");
-                    card.Dispose();
+                    card.Dispose(SmartCardDispostion.SCARD_LEAVE_CARD);
                     TraceLog.Write("CardDisposeEnd", "createdTemporaryConnection=True");
                 }
             }
